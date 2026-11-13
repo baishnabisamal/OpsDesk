@@ -53,6 +53,13 @@ const ticketSchema = new mongoose.Schema(
 
         category: {
             type: String,
+            enum: [
+                "financial",
+                "booking_operations",
+                "inventory",
+                "customer_service",
+                "general"
+            ],
             default: "general"
         },
 
@@ -102,10 +109,32 @@ const ticketSchema = new mongoose.Schema(
                 }
             }
         ],
-
+            
         routingReason: {
-            type: String,
-            default: null
+            region: {
+                type: Boolean,
+                default: false
+            },
+        
+            priority: {
+                type: Boolean,
+                default: false
+            },
+        
+            availability: {
+                type: Boolean,
+                default: false
+            },
+        
+            agentWorkloadAtAssignment: {
+                type: Number,
+                default: null
+           },
+
+            note: {
+                type: String,
+                default: null
+            }
         },
 
         slaDueAt: {

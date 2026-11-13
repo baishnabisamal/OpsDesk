@@ -19,11 +19,11 @@ const activitySchema = new mongoose.Schema(
                 "unassigned",
                 "linked",
                 "escalated",
-                "comment_added"
+                "comment_added",
+                "side_conversation_created"
             ],
             required: true
         },
-
         description: {
             type: String,
             required: true
