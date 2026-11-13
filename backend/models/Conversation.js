@@ -32,7 +32,8 @@ const conversationSchema = new mongoose.Schema(
                     type: String,
                     required: true,
                     lowercase: true,
-                    trim: true
+                    trim: true,
+                    immutable: true
                 }
             }
         ],
