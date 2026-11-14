@@ -1,9 +1,10 @@
 
+const { canEscalationManagerAccess } = require("../utils/accessRules");
 const Ticket = require("../models/Ticket");
 const Activity = require("../models/Activity");
 const Agency = require("../models/Agency");
 const mongoose = require("mongoose");
-
+const { syncAgentWorkload } = require("../utils/workload");
 // Validate MongoDB ObjectId
 function isValidObjectId(id) {
     return mongoose.Types.ObjectId.isValid(id);
@@ -363,6 +364,7 @@ async function getTicketById(req, res) {
             .populate("agencyId", "agencyName agencyCode region")
             .populate("createdBy", "name email")
             .populate("assignedAgent", "name email")
+            .populate("escalationManager", "name email")
             .populate(
                 "linkedTickets.ticketId",
                 "title status priority intent TBOH"
@@ -375,7 +377,14 @@ async function getTicketById(req, res) {
         }
 
         // Requester: only their own agency's tickets
+        // Defensive check for missing agency reference
         if (req.user.role === "requester") {
+            if (!ticket.agencyId || !ticket.agencyId._id) {
+                return res.status(500).json({
+                    error: "Ticket has no valid agency reference"
+                });
+            }
+
             const ticketAgencyId = ticket.agencyId._id.toString();
 
             if (
@@ -388,14 +397,13 @@ async function getTicketById(req, res) {
             }
         }
 
-        // Escalation Manager: only escalated tickets
-        if (
-            req.user.role === "escalation_manager" &&
-            ticket.status !== "escalated"
-        ) {
-            return res.status(403).json({
-                error: "Access denied"
-            });
+        // Escalation Manager: escalated tickets OR tickets assigned to them
+        if (req.user.role === "escalation_manager") {
+            if (!canEscalationManagerAccess(ticket, req.user.id)) {
+                return res.status(403).json({
+                    error: "Access denied"
+                });
+            }
         }
 
         // Fetch activity timeline
@@ -458,14 +466,13 @@ async function updateTicket(req, res) {
             });
         }
 
-        // Escalation Manager can update only escalated tickets
-        if (
-            req.user.role === "escalation_manager" &&
-            ticket.status !== "escalated"
-        ) {
-            return res.status(403).json({
-                error: "Access denied"
-            });
+        // Escalation Manager: escalated tickets OR tickets assigned to them
+        if (req.user.role === "escalation_manager") {
+            if (!canEscalationManagerAccess(ticket, req.user.id)) {
+                return res.status(403).json({
+                    error: "Access denied"
+                });
+            }
         }
 
         const validStatuses = [
@@ -557,7 +564,10 @@ async function updateTicket(req, res) {
         ticket.slaStatus = slaInfo.status;
 
         await ticket.save();
-
+        if (ticket.assignedAgent) {
+            await syncAgentWorkload(ticket.assignedAgent);
+        }
+        
         // Save activity logs
         for (const log of activityLogs) {
             await Activity.create({

@@ -1,6 +1,15 @@
+
+const { escalationManagerMongoFilter } = require("../utils/accessRules");
+
 function scopeTicketQuery(req, res, next) {
-    const { role, agencyId } = req.user;
-    const validRoles = ["requester", "agent", "escalation_manager", "lead"];
+    const { role, agencyId, id: userId } = req.user;
+
+    const validRoles = [
+        "requester",
+        "agent",
+        "escalation_manager",
+        "lead"
+    ];
 
     if (!validRoles.includes(role)) {
         return res.status(403).json({ error: "Access denied" });
@@ -10,16 +19,22 @@ function scopeTicketQuery(req, res, next) {
 
     if (role === "requester") {
         if (!agencyId) {
-            return res.status(403).json({ error: "Requester is not associated with an agency" });
+            return res.status(403).json({
+                error: "Requester is not associated with an agency"
+            });
         }
+
         req.ticketFilter.agencyId = agencyId;
     }
 
     if (role === "escalation_manager") {
-        req.ticketFilter.status = "escalated";
+        Object.assign(
+            req.ticketFilter,
+            escalationManagerMongoFilter(userId)
+        );
     }
 
-    // agent and lead → no filter, see everything
+    // Agents and leads can see all tickets.
 
     next();
 }

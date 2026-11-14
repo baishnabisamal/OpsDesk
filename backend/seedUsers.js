@@ -31,6 +31,25 @@ async function seed() {
             }
         );
 
+        const secondAgency = await Agency.findOneAndUpdate(
+            { agencyCode: "XYZ001" },
+            {
+                $setOnInsert: {
+                    agencyName: "XYZ Travels",
+                    agencyCode: "XYZ001",
+                    country: "India",
+                    region: "Asia",
+                    contactEmail: "contact@xyztravels.com"
+                }
+            },
+            {
+                upsert: true,
+                new: true,
+                setDefaultsOnInsert: true
+            }
+        );
+      //  });
+
         // Hash the demo password
         const hashedPassword = await bcrypt.hash("password123", 10);
 
@@ -52,11 +71,26 @@ async function seed() {
                 agencyId: null
             },
             {
+                name: "Priya (Agent)",
+                email: "agent2@example.com",
+                role: "agent",
+                region: "Asia",
+                availability: "available",
+                agencyId: null
+            },
+            {
                 name: "Manager (Escalation)",
                 email: "manager@example.com",
                 role: "escalation_manager",
                 region: "Asia",
                 agencyId: null
+            },
+            {
+                name: "XYZ Agency Requester",
+                email: "requester2@example.com",
+                role: "requester",
+                region: "Asia",
+                agencyId: secondAgency._id
             },
             {
                 name: "Lead User",

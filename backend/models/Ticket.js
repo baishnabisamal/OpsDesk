@@ -91,6 +91,11 @@ const ticketSchema = new mongoose.Schema(
             ref: "User",
             default: null
         },
+        escalationManager: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "User",
+            default: null
+        },
 
         region: {
             type: String,
