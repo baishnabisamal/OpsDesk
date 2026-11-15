@@ -407,3 +407,198 @@ Section 9 lists each race in detail.
 - **Risky changes are done in safe steps**: add a column as nullable, backfill in batches, then add `NOT NULL`; create indexes with `CONCURRENTLY`; add constraints as `NOT VALID`, then validate.
 - **Drift is detected**: CI builds a database from the migrations and compares it with the table definitions used by the code.
 - **No dead structure**: a column or table with no reader is removed by a migration.
+
+---
+
+## 9. Concurrency hazards
+
+A database does not only break because of bad code. It also breaks when two perfectly valid requests arrive at exactly the wrong time. Each row below is one such case, the mechanism that prevents it, and the test that will prove it.
+
+| # | Two things happen at once | What would go wrong | Prevention | Proof |
+|---|---|---|---|---|
+| 1 | A client times out and retries `POST /tickets` | Two tickets for one problem | `Idempotency-Key` row inserted with `ON CONFLICT DO NOTHING` inside the create transaction; the retry waits on the first, then replays its saved response | 10 simultaneous identical creates produce 1 ticket |
+| 2 | Two agents save edits to the same ticket | The second save silently erases the first | `UPDATE … WHERE id = $1 AND version = $2`; zero rows means `409 version_conflict` | 12 simultaneous edits, exactly 1 succeeds |
+| 3 | Two agents click "assign to me" | Both believe they own the ticket | Same version check; the loser gets `409` and refreshes | Simultaneous assigns, 1 winner |
+| 4 | Many tickets are routed to one agent at once | The agent ends up above their cap | `SELECT … FOR UPDATE` on the agent's presence row, cap re-checked after the lock, and `CHECK (open_count <= max_open)` as a backstop | 100 simultaneous creates, no agent above cap |
+| 5 | Two workers pull from the triage queue | The same ticket is assigned twice | `FOR UPDATE SKIP LOCKED`: each worker locks a different row | Parallel pulls return distinct tickets |
+| 6 | Two tickets arrive for a booking that has no case yet | Two open cases for one booking | Partial unique index (one open case per booking) with `INSERT … ON CONFLICT`, then re-read | Simultaneous creates on one TBOH share one case |
+| 7 | The SLA scanner escalates while an agent resolves | A resolved ticket is escalated, or the resolve is lost | The scanner uses the same transition path and version check as a person; whoever commits second is rejected, and the scanner simply skips | Scanner and resolve raced in a test, final state is valid |
+| 8 | Two scanner instances run together | A ticket is escalated twice, with duplicate events | Rows are selected with `SKIP LOCKED` and the transition is conditional on the current status | Two scanners, one escalation event |
+| 9 | A refresh token is used twice at the same moment | Two valid sessions from one token | `UPDATE … SET used_at = now() WHERE token_hash = $1 AND used_at IS NULL RETURNING`; the second use matches nothing and revokes the whole session family | Parallel refresh, 1 success, family revoked |
+| 10 | Two relay workers read the outbox | An event is published twice | `SKIP LOCKED` on unpublished rows; delivery is still at-least-once, so consumers ignore event ids they have seen | Duplicate event delivered, effect applied once |
+| 11 | The email worker crashes after sending and before recording it | The supplier receives the same email twice | `email_deliveries` has a unique `(message_id, recipient)`; the row is claimed before sending and the SMTP `Message-ID` is fixed | Job killed and retried, 1 email in Mailpit |
+| 12 | The mail provider delivers an inbound webhook twice | A reply appears twice in the thread | Unique provider message id on `inbound_emails` | Same webhook posted twice, 1 message |
+| 13 | A requester replies while an agent closes the ticket | The reply lands on a closed ticket and nobody sees it | Adding a message locks the ticket row briefly and applies the reopen rule in the same transaction | Reply and close raced, ticket ends open with the reply visible |
+| 14 | A pooled connection is reused by the next request | The next user runs with the previous user's identity | Identity is set with `set_config(…, true)`, which is transaction-local and vanishes at commit | Reused connection with no context returns no rows |
+| 15 | An event is written just after midnight on the first of a month | The insert fails because the month's partition does not exist | A job creates partitions three months ahead, and a default partition catches the rest | Insert with a far-future date succeeds |
+| 16 | A ticket is transferred while its counters are updated | The old agent's load is not decremented, or is decremented twice | Both presence rows are locked in a fixed order (by id) to avoid deadlock, and both counters change in the transfer's transaction | Concurrent transfers, counters equal a recount |
+| 17 | Code reads a status, decides, then writes | The status changed in between (check-then-act) | Decisions are made on a row read in the same transaction, and the write repeats the condition in its `WHERE` | Covered by 2, 7 and 13 |
+
+### The ideas behind the table
+
+- **Optimistic locking** (cases 2, 3, 7): assume conflicts are rare, detect them at write time with a version number, and make the loser retry. Right for anything a human edits, because no lock is held while a person thinks.
+- **Pessimistic locking** (cases 4, 13, 16): take a row lock first, for a few milliseconds, around a hot counter or a decision that must not interleave. Right for short, contended, machine-speed sections.
+- **`SKIP LOCKED`** (cases 5, 8, 10): turn a table into a work queue. Workers do not wait for each other; each takes the next free row.
+- **Unique constraints as arbiters** (cases 1, 6, 9, 11, 12): when two requests race to create the same thing, let the database pick the winner. "Check first, then insert" always has a gap.
+- **Idempotency** (cases 1, 10, 11, 12): anything that can be retried must be safe to run twice.
+- **Lock ordering** (case 16): when two rows must be locked, always lock them in the same order, or two transactions can each hold one and wait forever for the other.
+- **Isolation level**: PostgreSQL's default, Read Committed, is used throughout. The guarantees above come from explicit locks, version checks and constraints, which are visible in the code, instead of relying on Serializable and retry loops everywhere.
+
+---
+
+## 10. Key flows
+
+### 10.1 Create a ticket
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Client
+    participant A as API
+    participant M as ML service
+    participant D as PostgreSQL
+
+    C->>A: POST /tickets with Idempotency-Key
+    A->>A: Validate body, check permission
+    A->>A: Intent rules on the text
+    opt no rule matched
+        A->>M: classify, 150 ms timeout
+        M-->>A: intent and confidence, or timeout
+    end
+    A->>D: BEGIN, set identity for Row-Level Security
+    A->>D: Claim idempotency key
+    alt key already used
+        D-->>A: stored response
+        A-->>C: same response, Idempotent-Replayed true
+    else new key
+        A->>D: Read booking, copy travel dates
+        A->>D: Find or create the open case
+        A->>D: Compute SLA deadline, insert ticket
+        A->>D: Lock best agent, check cap, assign
+        A->>D: Insert timeline events and outbox rows
+        A->>D: Save response on the key, COMMIT
+        A-->>C: 201 Created with ETag
+    end
+```
+
+The ML call is made **before** the transaction opens, so no database lock is held while waiting on the network.
+
+### 10.2 Edit with a version check
+
+```mermaid
+sequenceDiagram
+    participant A1 as Agent 1
+    participant A2 as Agent 2
+    participant API as API
+    participant D as PostgreSQL
+
+    A1->>API: GET ticket
+    API-->>A1: version 3
+    A2->>API: GET ticket
+    API-->>A2: version 3
+    A1->>API: PATCH with If-Match 3
+    API->>D: UPDATE where version is 3
+    D-->>API: 1 row, now version 4
+    API-->>A1: 200 OK
+    A2->>API: PATCH with If-Match 3
+    API->>D: UPDATE where version is 3
+    D-->>API: 0 rows
+    API-->>A2: 409 version_conflict
+```
+
+### 10.3 Routing an assignment
+
+```mermaid
+sequenceDiagram
+    participant S as Routing service
+    participant D as PostgreSQL
+
+    S->>D: Candidates in region, on shift, under cap
+    S->>S: Score by skill, load and priority
+    loop best candidate first
+        S->>D: SELECT presence row FOR UPDATE
+        alt still under cap
+            S->>D: Increment open_count, set assignee
+            S->>D: Insert routing_decision with reasons
+        else cap reached meanwhile
+            S->>S: Try next candidate
+        end
+    end
+    Note over S,D: No candidate left means the ticket stays in triage
+```
+
+The first query is only a shortlist. The cap is checked again after the lock, because another transaction may have assigned to the same agent in between.
+
+### 10.4 From a change to an email and a live update
+
+```mermaid
+sequenceDiagram
+    participant A as API
+    participant D as PostgreSQL
+    participant R as Relay worker
+    participant X as Redis Stream
+    participant E as Email worker
+    participant W as Socket.IO gateway
+
+    A->>D: One transaction with the change, its event and an outbox row
+    R->>D: Read unpublished outbox rows, SKIP LOCKED
+    R->>X: Publish event
+    R->>D: Mark published
+    X-->>W: Event
+    W-->>W: Push to rooms allowed to see it
+    X-->>E: Event
+    E->>D: Claim delivery row, unique per message and recipient
+    E->>E: Send through SMTP
+```
+
+This is the **transactional outbox** pattern. "Commit, then publish" loses the event if the process dies between the two lines. "Publish, then commit" announces a change that may roll back. Writing the event in the same transaction as the change removes both failures. Delivery becomes at-least-once, which is why every consumer is idempotent.
+
+### 10.5 SLA scan and automatic escalation
+
+1. Every 60 seconds a worker selects live tickets whose `sla_due_at` is near or past, using `SKIP LOCKED`.
+2. Near the deadline, `sla_state` becomes `at_risk`; past it, `breached`.
+3. A breached ticket is escalated through the same service function a person would use, as the `system` actor, so the timeline shows who did it and the same rules apply.
+4. If the ticket changed in the meantime (resolved, already escalated), the transition is rejected and the scanner moves on.
+
+---
+
+## 11. Ticket state machine
+
+```mermaid
+stateDiagram-v2
+    [*] --> new
+    new --> open: assigned
+    open --> pending: waiting on requester
+    open --> escalated: escalate or SLA breach
+    open --> resolved
+    pending --> open: requester replies
+    pending --> escalated
+    pending --> resolved
+    escalated --> open: de-escalate
+    escalated --> resolved
+    resolved --> open: reopen
+    resolved --> closed: confirmed or timed out
+    closed --> [*]
+```
+
+The rules are one table of `(from, to) → roles allowed`. Anything not in the table is illegal.
+
+| From | To | Who |
+|---|---|---|
+| new | open | staff, system |
+| open | pending | staff |
+| open | escalated | staff, system |
+| open | resolved | staff |
+| pending | open | anyone on the ticket (a requester's reply does this) |
+| pending | escalated | staff, system |
+| pending | resolved | staff |
+| escalated | open | escalation manager, lead |
+| escalated | resolved | escalation manager, lead |
+| resolved | open | anyone on the ticket (reopen) |
+| resolved | closed | anyone on the ticket, system (after a quiet period) |
+
+"Staff" means agent, escalation manager and lead. `closed` is final: a new problem is a new ticket, linked into the same case.
+
+Why a table and not `if` statements: the whole policy fits on one screen, a test can check every one of the 6 × 6 × roles combinations, and adding a state is one row instead of a hunt through the code.
+
+Side effects belong to the transition, not to the caller: entering `pending` pauses the SLA clock, leaving it resumes the clock, entering `resolved` sets `resolved_at` and releases the agent's load, entering `escalated` changes owner and queue.
