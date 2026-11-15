@@ -602,3 +602,124 @@ The rules are one table of `(from, to) → roles allowed`. Anything not in the t
 Why a table and not `if` statements: the whole policy fits on one screen, a test can check every one of the 6 × 6 × roles combinations, and adding a state is one row instead of a hunt through the code.
 
 Side effects belong to the transition, not to the caller: entering `pending` pauses the SLA clock, leaving it resumes the clock, entering `resolved` sets `resolved_at` and releases the agent's load, entering `escalated` changes owner and queue.
+
+---
+
+## 12. Tenant isolation and security
+
+### Isolation is enforced twice
+
+1. **In the application**: a permission table decides whether a role may perform an action at all.
+2. **In the database**: Row-Level Security (RLS) policies decide which rows a session can see or write.
+
+Filtering only in application code works until one query forgets `WHERE agency_id = …`, and that one query is a data leak. With RLS, the forgotten filter returns nothing.
+
+### How RLS is wired
+
+- **A separate database role.** Table owners and superusers bypass RLS. The API connects as `opsdesk_app`, which owns nothing and is `NOBYPASSRLS`. Migrations run as the owner.
+- **Identity is set per transaction.** Every request runs inside one helper that begins a transaction and calls `set_config('app.role', …, true)`, `set_config('app.agency_id', …, true)` and `set_config('app.user_id', …, true)`. The `true` makes the setting local to the transaction, so a pooled connection cannot carry one user's identity to the next request.
+- **Policies fail closed.** If the settings are missing, the policy expression is null and no rows match. Forgetting to set identity shows nothing, not everything.
+- **Hidden means not found.** A ticket hidden by RLS returns `404`, the same as one that does not exist, so ids cannot be probed.
+- **Internal notes** are rows with `visibility = 'internal'`. The policy hides them from requesters in the database, so no endpoint can leak them by accident.
+- **The helper is the only way to reach the database.** There is no way to run a query without identity.
+
+### Authentication
+
+| Item | Design |
+|---|---|
+| Passwords | Argon2id hashes; never logged, never returned |
+| Access token | JWT, 15 minutes, carries user id, role, agency and team |
+| Refresh token | Random, single use, rotated on every refresh; only its SHA-256 hash is stored |
+| Reuse detection | Using an already-used refresh token revokes every session in that family, because it means the token was stolen |
+| Login errors | The same message and timing whether the email exists or not |
+
+### Other controls
+
+| Risk | Control |
+|---|---|
+| SQL injection | Parameterised queries only; no string-built SQL |
+| Mass assignment | Zod schemas reject unknown fields; the server sets `agency_id`, `requester_id` and `status`, never the client |
+| Forged inbound email | HMAC signature with a shared secret, compared in constant time, with a timestamp to stop replays |
+| Abuse and scraping | Token-bucket rate limits in Redis per user and per agency; `429` with `Retry-After` |
+| Leaked secrets | Secrets only in environment variables; `.env` is git-ignored; a pre-commit hook scans for secrets; the app refuses to start with a missing or short secret |
+| Service-to-service | The ML service accepts only a shared-secret header and is not exposed outside the internal network |
+| Realtime leaks | Socket.IO rooms are joined from the verified token, and events are filtered by the same visibility rules as the API |
+| Audit | The timeline is append-only: the application role has no `UPDATE` or `DELETE` on it |
+
+---
+
+## 13. API design
+
+REST over JSON under `/api/v1`. The OpenAPI document is generated from the Zod schemas and served at `/docs`.
+
+### Resources
+
+| Method and path | Purpose | Phase |
+|---|---|---|
+| `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout` | Sessions | 1 |
+| `POST /tickets` | Create (requires `Idempotency-Key`) | 1 |
+| `GET /tickets` | List with filters, search and cursor paging | 1 |
+| `GET /tickets/{id}` | Detail, with `ETag` | 1 |
+| `PATCH /tickets/{id}` | Edit fields (requires `If-Match`) | 1 |
+| `POST /tickets/{id}/transitions` | Change status | 1 |
+| `POST /tickets/{id}/assign` | Assign or transfer | 1 |
+| `GET` and `POST /tickets/{id}/messages` | Replies and internal notes | 1 |
+| `GET /tickets/{id}/timeline` | Events | 1 |
+| `PUT /tickets/{id}/intent` | Override intent | 2 |
+| `POST` and `DELETE /tickets/{id}/links` | Manual link and unlink | 2 |
+| `GET /cases/{id}` | Case view | 2 |
+| `POST /tickets/{id}/escalate`, `POST /tickets/{id}/de-escalate` | Escalation | 3 |
+| `GET /queues/{name}` | Triage, mine, by region, by intent, escalations | 3 |
+| `PUT /me/presence` | Go online or offline | 3 |
+| `GET` and `POST /tickets/{id}/side-conversations` | Supplier threads | 4 |
+| `POST /inbound/email` | Signed webhook for replies | 4 |
+| `GET /insights/themes` | Weekly themes | 5 |
+| `GET /exports/tickets.csv`, `POST /exports` | Streaming and background export | 5 |
+| `GET /healthz`, `GET /readyz`, `GET /metrics` | Operations | 1, 5 |
+
+### Conventions
+
+- **Actions that are not plain edits are their own endpoints.** A status change has rules and side effects, so it is `POST …/transitions`, not a `PATCH` of the status field.
+- **Errors use RFC 9457 `application/problem+json`** with a stable machine-readable `code`:
+
+  ```json
+  {
+    "type": "https://opsdesk.dev/problems/version-conflict",
+    "title": "Version conflict",
+    "status": 409,
+    "code": "version_conflict",
+    "detail": "The ticket was changed by someone else. Reload and try again.",
+    "request_id": "req_8f2c1a"
+  }
+  ```
+
+- **Status codes mean one thing each**: `400` malformed, `401` not logged in, `403` role may not do this, `404` not found or not visible, `409` conflict with current state, `422` valid JSON that breaks a rule, `429` rate limited.
+- **Keyset pagination.** Lists are ordered by `(created_at, id)` and return an opaque `next_cursor`. `OFFSET` is not used: it gets slower with depth and skips or repeats rows when data changes between pages.
+- **Idempotency.** `POST /tickets` requires an `Idempotency-Key` header. The same key with the same body replays the first response; the same key with a different body is a `422`, because that is a client bug, not a retry. Keys expire after 24 hours.
+- **Concurrency.** `GET` returns the version as an `ETag`. `PATCH` requires `If-Match`. Missing header is `428`; stale version is `409`.
+- **Versioning.** Breaking changes go to `/api/v2`. Adding optional fields is not a breaking change.
+- **Request ids.** Every response carries `X-Request-Id`, which also appears in logs and traces.
+
+---
+
+## 14. ML service boundary
+
+The Node API owns all data and all writes. The Python service only answers questions about text. That keeps the split easy to explain and easy to replace.
+
+| Endpoint | Used by | Returns |
+|---|---|---|
+| `POST /classify` | Ticket create | Intent, confidence, top three suggestions, model version |
+| `POST /similarity` | Linkage | Cosine similarity between a new ticket and candidate tickets |
+| `POST /themes/cluster` | Weekly worker job | Clusters with top terms and sample ticket ids |
+| `GET /healthz` | API readiness | Whether a model is loaded, and its version |
+
+### Rules for the boundary
+
+- **Cheap rules run first, in Node.** Keywords and patterns catch the obvious intents with no network call. The model is asked only when no rule fires.
+- **The model can never block a ticket.** The call has a 150 ms timeout and a circuit breaker. On timeout, error or an open breaker, the ticket is created with `intent = other` and `needs_review = true`.
+- **The service is stateless and has no database credentials.** Node sends the text and stores the result, so tenant isolation stays in one place.
+- **Every prediction is traceable.** The ticket stores `intent_source` (rule, model or manual) and the model version.
+- **Humans correct the model.** An agent's override is stored in `intent_overrides`, which becomes training data.
+- **Training is offline.** A script trains TF-IDF with logistic regression on labelled tickets, reports macro-F1 on a held-out split, and writes a versioned model file that the service loads at startup.
+
+A **circuit breaker** stops calling a dependency that keeps failing: after several failures it "opens" and fails immediately for a short time, then lets one test request through. Without it, every ticket create would wait the full timeout while the ML service is down.
