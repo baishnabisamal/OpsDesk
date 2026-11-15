@@ -1,0 +1,30 @@
+# Secrets and local config
+.env
+.env.*
+!.env.example
+
+# Node
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+npm-debug.log*
+
+# Python (ML service)
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# Trained models and generated data
+*.joblib
+ml/models/
+exports/
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
