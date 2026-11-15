@@ -23,6 +23,10 @@ __pycache__/
 ml/models/
 exports/
 
+# Local working notes (not part of the published project)
+CLAUDE.md
+NOTES.md
+
 # Editors and OS
 .DS_Store
 .idea/
