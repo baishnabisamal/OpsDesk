@@ -148,3 +148,107 @@ What this tells us:
 - **Correctness is the hard part.** With hundreds of people and several background jobs touching the same tickets, the risk is two valid requests arriving at the wrong moment. Most of this design is about that.
 - **Growth is in two tables.** Events and messages grow by over 200 million rows a year, so those two are partitioned by month and archived. Tickets stay small enough to index normally.
 - **Reads dominate.** Queue views are read far more often than tickets are written, so indexes are designed around the queue queries, and paging never uses `OFFSET`.
+
+---
+
+## 5. Architecture
+
+### Components
+
+```mermaid
+flowchart LR
+    Web["React app"]
+    Supplier["Supplier email"]
+
+    subgraph Node["Node.js codebase"]
+        API["Express API"]
+        WS["Socket.IO gateway"]
+        Worker["Workers: SLA scan, routing retry, outbox relay, email, archive"]
+    end
+
+    PG[("PostgreSQL: source of truth")]
+    Redis[("Redis: job queues and event stream")]
+    ML["ML service: Python"]
+    Mail["Mailpit: SMTP catcher"]
+    S3[("MinIO: exports and archives")]
+
+    Web -->|HTTPS, JSON| API
+    Web <-->|WebSocket| WS
+    Supplier -->|signed webhook| API
+    API --> PG
+    API -->|classify, similarity| ML
+    API --> Redis
+    Worker --> PG
+    Worker --> Redis
+    Worker --> Mail
+    Worker --> S3
+    Worker -->|cluster themes| ML
+    Redis --> WS
+```
+
+### Why a modular monolith
+
+One Node codebase owns all writes, and PostgreSQL is the only source of truth. The API, the WebSocket gateway and the workers are separate processes started from the same code.
+
+- **One transaction can cover everything that must change together**: the ticket, its timeline entry and the event that announces it. Split across services, that needs distributed coordination, for no gain at six writes per second.
+- **The database does work that would otherwise be code**: foreign keys, check constraints, row locks and Row-Level Security.
+- **Module boundaries are kept clean** (`domain`, `services`, `routes`, `workers`), so a part could be cut out into its own service later if it ever needed to scale alone.
+
+The cost is one failure domain: a slow endpoint shares resources with fast ones. Slow work is therefore pushed to workers.
+
+### What each part owns
+
+| Part | Owns | Never does |
+|---|---|---|
+| Express API | Validation, permissions, all state changes, reads | Slow work inside a request (email, exports to file, clustering) |
+| PostgreSQL | Every durable fact | Hold anything that only lives in memory elsewhere |
+| Redis | Job queues, the event stream, rate-limit counters | Hold anything that cannot be rebuilt from PostgreSQL |
+| Workers | Scheduled and queued work, each job safe to run twice | Bypass the service layer to change tickets |
+| ML service | Answers about text | Touch the database or see credentials |
+| Socket.IO gateway | Pushing events to browsers | Decide who may read; it applies the same rules as the API |
+
+### Layers inside the API
+
+```
+routes/      parse the request, call one service function, shape the response
+services/    the only place state changes: opens a transaction, applies rules, records events
+domain/      pure functions: state machine, permissions, SLA maths, routing score (no I/O)
+db/          table definitions and the transaction helper
+```
+
+A rule lives in exactly one layer. Pure rules in `domain/` are tested with no database at all, which keeps the test suite fast and the rules easy to reason about.
+
+### What happens when a part fails
+
+| Failure | Effect | Why it is safe |
+|---|---|---|
+| ML service down or slow | Ticket is created with intent `other` and flagged for review | The call has a short timeout and a circuit breaker; create never waits on it |
+| Redis down | API keeps accepting writes; realtime updates and emails are delayed | Events wait in the `outbox` table and are published when Redis returns |
+| Worker crashes mid-job | The job runs again | Every job is idempotent |
+| Email server down | Sends are retried with backoff, then parked in a dead-letter table | The message itself is already saved |
+| API process crashes mid-request | The transaction rolls back; the client retries with the same idempotency key | Nothing is half-written |
+| PostgreSQL down | The system is down | It is the single source of truth by design; `/readyz` reports it |
+
+---
+
+## 6. Tech stack
+
+| Concern | Choice | Why |
+|---|---|---|
+| Language | TypeScript on Node 22 | One language for API, workers and UI; types catch mistakes in request and row shapes |
+| HTTP | Express 5 | Small and well understood; middleware fits auth, idempotency and rate limiting |
+| Validation | Zod | One schema validates the request and generates the OpenAPI document |
+| Database | PostgreSQL 16 | Transactions, constraints, row locks, Row-Level Security, partitioning, full-text search |
+| Queries | `pg` with Drizzle ORM | Typed queries that stay close to SQL, with raw SQL where needed |
+| Migrations | Plain SQL files, node-pg-migrate | Partitions, policies and grants need real SQL; a file per change is easy to review |
+| Queues | Redis 7 with BullMQ | Retries, backoff, scheduled jobs |
+| Events | Redis Streams | Ordered, replayable, consumer groups |
+| Realtime | Socket.IO | Rooms map directly to "who may see this" |
+| ML | Python, FastAPI, scikit-learn | The standard tools for TF-IDF, logistic regression and k-means |
+| Email | Nodemailer to Mailpit | Real SMTP behaviour with nothing leaving the machine |
+| Files | MinIO | S3-compatible storage for exports and archives |
+| Frontend | React, Vite, TanStack Query | Server state with caching and refetching handled for us |
+| Tests | Vitest, Supertest, Testcontainers, fast-check | Real PostgreSQL in tests; property tests for date maths |
+| Observability | pino, prom-client, OpenTelemetry, Grafana | Logs, metrics and traces tied together by a request id |
+| Load and contract | k6, Schemathesis | Measured latency; the API is checked against its own specification |
+| Local infrastructure | Docker Compose | One command starts every dependency |
