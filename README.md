@@ -252,3 +252,158 @@ A rule lives in exactly one layer. Pure rules in `domain/` are tested with no da
 | Observability | pino, prom-client, OpenTelemetry, Grafana | Logs, metrics and traces tied together by a request id |
 | Load and contract | k6, Schemathesis | Measured latency; the API is checked against its own specification |
 | Local infrastructure | Docker Compose | One command starts every dependency |
+
+---
+
+## 7. Data model
+
+### Relationships
+
+```mermaid
+erDiagram
+    REGIONS ||--o{ TEAMS : has
+    REGIONS ||--o{ REGION_HOLIDAYS : observes
+    TEAMS ||--o{ USERS : employs
+    AGENCIES ||--o{ USERS : has
+    AGENCIES ||--o{ BOOKINGS : makes
+    SUPPLIERS ||--o{ BOOKINGS : fulfils
+    BOOKINGS ||--o{ CASES : groups
+    BOOKINGS ||--o{ TICKETS : concerns
+    AGENCIES ||--o{ TICKETS : raises
+    CASES ||--o{ TICKETS : contains
+    USERS ||--o{ TICKETS : assigned
+    TICKETS ||--o{ TICKET_EVENTS : records
+    TICKETS ||--o{ MESSAGES : has
+    TICKETS ||--o{ ROUTING_DECISIONS : explains
+    TICKETS ||--o{ SIDE_CONVERSATIONS : has
+    SIDE_CONVERSATIONS ||--o{ SIDE_PARTICIPANTS : includes
+    SIDE_CONVERSATIONS ||--o{ SIDE_MESSAGES : has
+    USERS ||--o| AGENT_PRESENCE : has
+    USERS ||--o{ AGENT_SHIFTS : works
+    USERS ||--o{ AGENT_SKILLS : has
+    USERS ||--o{ REFRESH_TOKENS : holds
+```
+
+### Core tables (Phase 1)
+
+| Table | Purpose | Keys and constraints worth knowing |
+|---|---|---|
+| `regions` | MEA, EU, APAC, AMER, each with a time zone | Primary key is the code; time zone is required because business hours depend on it |
+| `agencies` | Customers | Unique `slug`; `is_active` instead of deletion |
+| `teams` | Support teams, one region each | Foreign key to `regions` |
+| `users` | Everyone who logs in | Unique lower-cased email; `role` restricted by `CHECK`; a requester **must** have an `agency_id` and staff **must not** (one `CHECK` across both columns); `is_active` instead of deletion |
+| `suppliers` | Hotels and wholesalers | Unique `code` |
+| `bookings` | One hotel booking | Unique `tboh`; foreign keys to agency and supplier; `check_in_date`, `hotel_time_zone`, `lcd_at`; `CHECK (lcd_at <= check-in)`; `amount numeric(12,2)` with `currency char(3)` |
+| `cases` | A group of tickets about one booking | At most **one open case per booking**, enforced by a partial unique index |
+| `tickets` | The unit of work | See below |
+| `ticket_events` | Append-only timeline | Partitioned by month; no `UPDATE` or `DELETE` allowed for the application |
+| `messages` | Public replies and internal notes | Partitioned by month; `visibility` is `public` or `internal`; append-only |
+| `outbox` | Events waiting to be published | Written in the same transaction as the change; partial index on unpublished rows |
+| `idempotency_keys` | One row per client retry key | Unique `(user_id, key)`; stores request hash, status and response body |
+| `refresh_tokens` | Login sessions | Stores only a SHA-256 hash; `used_at` makes each token single-use |
+
+### The `tickets` table
+
+| Column group | Columns | Rule |
+|---|---|---|
+| Identity | `id` (UUID), `agency_id`, `booking_id`, `case_id`, `requester_id` | All foreign keys; `agency_id` must equal the booking's agency (composite foreign key) |
+| Content | `subject`, `body` | Required, length-limited; a generated `search_vector` column feeds full-text search |
+| Classification | `intent`, `intent_source`, `needs_review`, `priority` | Values restricted by `CHECK` |
+| Workflow | `status`, `assignee_id`, `team_id` | `status` restricted by `CHECK`; a `new` ticket has no assignee |
+| Travel copy | `check_in_at`, `lcd_at`, `region` | Copied from the booking at create so queues sort without a join |
+| SLA | `sla_due_at`, `sla_state`, `sla_paused_at`, `sla_paused_total` | `sla_paused_at` is set only while status is `pending` |
+| Lifecycle | `created_at`, `updated_at`, `resolved_at`, `closed_at` | `resolved_at` is set if and only if status is `resolved` or `closed` |
+| Concurrency | `version` | Starts at 1, incremented by every update |
+
+### Tables added later
+
+| Phase | Tables |
+|---|---|
+| 2 | `intent_overrides`, `ticket_links` |
+| 3 | `agent_shifts`, `agent_presence`, `agent_skills`, `routing_decisions`, `sla_policies`, `region_holidays`, `ticket_watchers`, `dead_letter_jobs` |
+| 4 | `side_conversations`, `side_participants`, `side_messages`, `email_deliveries`, `inbound_emails`, `inbound_quarantine` |
+| 5 | `theme_weekly`, `export_jobs`, `archive_manifests` |
+
+A table is created in the phase that first uses it. Nothing is added "for later".
+
+### Indexes follow the queries
+
+| Query | Index |
+|---|---|
+| A queue ordered by deadline | `(team_id, sla_due_at)` restricted to live statuses (partial index) |
+| My queue | `(assignee_id, sla_due_at)` restricted to live statuses |
+| An agency's tickets, newest first, paged | `(agency_id, created_at DESC, id DESC)` |
+| All tickets on a booking | `(booking_id)` |
+| A ticket's timeline | `(ticket_id, created_at)` on each partition |
+| Text search | GIN on `search_vector` |
+| Unpublished events | Partial index on `outbox (id) WHERE published_at IS NULL` |
+
+Partial indexes keep the hot indexes small: closed tickets are most of the table but are never in a queue.
+
+### Design choices explained
+
+- **UUID primary keys.** Ids appear in URLs. Sequential numbers would let anyone guess how many tickets exist and probe neighbours.
+- **Normalised first, denormalised on purpose.** Bookings are the single home of travel dates. The ticket carries a copy only because queue sorting needs it, and bookings are not edited after import, so the copy cannot drift.
+- **`agency_id` repeated on messages and events.** Row-Level Security policies can then check one column instead of joining. A composite foreign key `(ticket_id, agency_id)` to `tickets (id, agency_id)` makes it impossible for the copy to disagree with the ticket.
+- **Partitioning by month** on the two tables that grow fastest. Queries for one ticket touch few partitions, and old months can be detached and archived as a unit instead of deleting rows one by one. The primary key is `(id, created_at)` because PostgreSQL requires the partition key in it. A default partition catches anything outside the created range.
+- **Events are separate from messages.** Events are facts about what changed, used for audit and realtime. Messages are what people wrote. They have different readers and different visibility rules.
+
+---
+
+## 8. Data integrity rules
+
+These are design rules, not aspirations. Each is enforced by the database where the database can do it, and each has a test. The aim is that an integrity audit of the finished system finds nothing.
+
+### 8.1 Schema and relationships
+
+- **Every reference is a real foreign key.** No "soft" ids pointing at rows that might not exist.
+- **Every foreign key states its `ON DELETE` rule.** The default is `RESTRICT`: a row that others depend on cannot be removed. `CASCADE` is used only where the child has no meaning alone (session tokens of a user).
+- **`NOT NULL` unless absence means something.** `assignee_id` may be null (unassigned). `subject` may not.
+- **`CHECK` constraints for closed sets and cross-column rules**: status, priority, role, visibility; requester has an agency and staff do not; `lcd_at` is not after check-in; counters are not negative.
+- **The server validates too**, with Zod, so users get clear errors. The database is the last line: it holds even if a script, a migration or a future service writes directly.
+
+### 8.2 Duplicates, orphans and deletion
+
+- **Unique constraints on natural keys**: user email (case-insensitive), booking `tboh`, supplier `code`, `(user_id, idempotency_key)`, one presence row per agent, one participant row per person per side conversation.
+- **Uniqueness that depends on state uses partial unique indexes**: one open case per booking.
+- **No hard deletes of business data.** The application's database role has no `DELETE` privilege on any business table. Users and agencies are deactivated with `is_active`. Tickets end in `closed`. Removal happens only through archival, which is a separate, audited job.
+- **Orphans are impossible, not cleaned up**: foreign keys with `RESTRICT` and no deletes mean there is nothing to orphan.
+- **Denormalised copies cannot disagree**, because composite foreign keys tie them to their source.
+
+### 8.3 Transactions and concurrency
+
+- **Every multi-step write is one transaction.** Creating a ticket writes the idempotency key, the ticket, the case link, the timeline event and the outbox row together, or none of them.
+- **Lost updates are prevented by a `version` column** checked in the `WHERE` clause of every update.
+- **Duplicate creates are prevented by idempotency keys** claimed inside the creating transaction.
+- **Counters change only under a row lock**, in the same transaction as the fact they count, and are bounded by a `CHECK`. A nightly job recounts and reports any drift.
+- **Queue pulls use `FOR UPDATE SKIP LOCKED`** so two workers never take the same row.
+- **No external call happens inside a transaction.** Email, the ML service and Redis are called before or after, never while row locks are held.
+- **Transactions are short.** A human never holds a lock: editing uses optimistic versioning.
+
+Section 9 lists each race in detail.
+
+### 8.4 Business rules
+
+- **Status changes go through one transition table** on the server, used by every code path including background jobs.
+- **The database backs the rules it can express**: allowed status values, `resolved_at` only in resolved or closed states, no assignee on a `new` ticket.
+- **Nothing is enforced only in the browser.** The UI hides buttons for convenience; the server decides.
+- **A failed write rolls back completely** and returns a typed error with a stable code. Database errors are mapped: unique violation to `409`, foreign key violation to `422`, serialization failure to a bounded retry.
+
+### 8.5 Data types and time
+
+- **All instants are `timestamptz`, stored in UTC.** `timestamp without time zone` is not used anywhere.
+- **The server clock is the only clock.** `created_at` defaults to `now()` in the database. Client-supplied times are never trusted for ordering.
+- **Calendar dates and instants are different types.** A check-in is a date at a hotel; it becomes an instant only with the hotel's time zone and a stated time of day. `lcd_at` is stored as an instant because it is a precise cut-off.
+- **Business-hours maths converts explicitly** to the region's time zone, so shifts and holidays behave correctly across daylight-saving changes.
+- **Ranges are half-open**: `created_at >= start AND created_at < end`. This removes the classic end-of-day and end-of-month boundary bugs, and matches how partitions are defined.
+- **Money is `numeric(12,2)` with a currency code.** Floating point is never used for amounts.
+- **Durations are stored as integers of seconds**, not as floats.
+
+### 8.6 Migrations and maintainability
+
+- **The schema changes only through numbered SQL migration files** in the repository. Nobody edits the database by hand.
+- **Migrations are forward-only and never edited after they are merged.** A mistake is fixed by a new migration.
+- **Two database roles.** Migrations run as the owner. The application runs as a role that owns nothing, cannot bypass Row-Level Security, and has only the privileges it needs.
+- **Risky changes are done in safe steps**: add a column as nullable, backfill in batches, then add `NOT NULL`; create indexes with `CONCURRENTLY`; add constraints as `NOT VALID`, then validate.
+- **Drift is detected**: CI builds a database from the migrations and compares it with the table definitions used by the code.
+- **No dead structure**: a column or table with no reader is removed by a migration.
