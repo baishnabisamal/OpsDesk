@@ -723,3 +723,222 @@ The Node API owns all data and all writes. The Python service only answers quest
 - **Training is offline.** A script trains TF-IDF with logistic regression on labelled tickets, reports macro-F1 on a held-out split, and writes a versioned model file that the service loads at startup.
 
 A **circuit breaker** stops calling a dependency that keeps failing: after several failures it "opens" and fails immediately for a short time, then lets one test request through. Without it, every ticket create would wait the full timeout while the ML service is down.
+
+---
+
+## 15. Background work
+
+| Job | Trigger | What it does |
+|---|---|---|
+| Outbox relay | Continuous | Publishes unpublished events to the Redis stream |
+| Email sender | Stream event | Sends side-conversation and notification emails |
+| SLA scanner | Every 60 s | Flags at-risk and breached tickets, escalates on breach |
+| Routing retry | Shift start, and every few minutes | Assigns tickets waiting in triage |
+| Auto-close | Hourly | Closes tickets resolved and quiet for the configured period |
+| Partition maintenance | Daily | Creates monthly partitions three months ahead |
+| Counter reconciliation | Nightly | Recounts agent load and reports drift |
+| Theme rollup and clustering | Nightly and weekly | Builds `theme_weekly` |
+| Archival | Monthly | Moves old closed data to object storage |
+| Idempotency key cleanup | Daily | Removes keys older than 24 hours |
+
+### Rules every job follows
+
+- **Idempotent.** A job may run twice (crash, retry, two workers). Running it twice must equal running it once.
+- **At-least-once, never at-most-once.** A job is acknowledged only after its effect is committed. Losing work is worse than repeating it.
+- **Retries with exponential backoff and jitter**, so a failing dependency is not hammered and retries do not all arrive together.
+- **A dead-letter table.** After the last retry a job is stored in `dead_letter_jobs` with its error, for a person to inspect and replay. Nothing fails silently.
+- **Jobs go through the service layer**, as the `system` actor, so they obey the same state machine and leave the same timeline entries as people do.
+- **Small batches.** Long transactions hold locks and bloat the database; jobs commit every few hundred rows.
+
+### Archival
+
+Closed tickets older than the retention window are archived by month: the job detaches the old partition, writes it to object storage as a compressed file, records row count and checksum in `archive_manifests`, verifies the file, and only then drops the partition. An archive lookup endpoint reads a ticket's history back from storage. Order matters: data is never removed before its copy is verified.
+
+---
+
+## 16. Observability
+
+| Signal | What | Tool |
+|---|---|---|
+| Logs | One JSON line per request: request id, user id, route, status, duration. No passwords, tokens or message bodies. | pino |
+| Metrics | Request rate, errors and duration per route (RED); queue depth, job failures, outbox lag, SLA breaches, DB pool usage | prom-client, Prometheus, Grafana |
+| Traces | One trace per request across API, database, ML service and jobs | OpenTelemetry, Jaeger |
+| Health | `/healthz`: the process is alive. `/readyz`: PostgreSQL is reachable (required), Redis and ML service (reported as degraded) | Express |
+
+Two measurements matter most for this design:
+
+- **Outbox lag**: age of the oldest unpublished event. If it grows, realtime and email are falling behind.
+- **Counter drift**: difference between stored agent load and a recount. It should always be zero; anything else is a concurrency bug.
+
+---
+
+## 17. Testing strategy
+
+| Level | What it covers | How |
+|---|---|---|
+| Unit | Pure rules: every state transition for every role, every permission, SLA maths, routing score | Vitest, no database, runs in seconds |
+| Property | Statements that must hold for all inputs, for example "the SLA deadline is never after the travel deadline minus the buffer" | fast-check generates thousands of dates, time zones and holidays |
+| Integration | Endpoints against a real PostgreSQL and Redis | Supertest with Testcontainers; no mocks of the database |
+| Concurrency | Every row of the hazard table in section 9 | Many requests fired together with `Promise.all`, then the final state is asserted |
+| Isolation | Every route, called as the wrong agency, returns `404` for a real id | Routes are read from the OpenAPI document, so a new route cannot be forgotten |
+| Integrity | The database refuses bad data even when the application is bypassed | Direct SQL as the app role: violate each constraint, try `UPDATE` and `DELETE` on the timeline |
+| Migration | A fresh database built from migrations matches the code's table definitions | CI job |
+| Contract | The API never returns a `500` and always matches its specification | Schemathesis |
+| Load | The latency targets in section 3 | k6 |
+
+Why real PostgreSQL in tests: the guarantees in this design come from constraints, locks and Row-Level Security. A mocked database would test none of them.
+
+---
+
+## 18. Roadmap
+
+Each phase ends on a **gate**: tests that must pass before the next phase starts. Each step is one concept, built and understood before moving on.
+
+### Phase 0: Design (this document)
+
+Done when this README is complete and reviewed.
+
+### Phase 1: Foundation and ticket core
+
+| Step | Build | Concept learned |
+|---|---|---|
+| 1 | Workspaces, TypeScript, lint, tests, Docker Compose, Makefile | Reproducible setup |
+| 2 | Typed config, error format, health checks | Fail fast; one error shape |
+| 3 | Enums, state machine, permission table, with unit tests | Pure domain logic; table-driven rules |
+| 4 | First SQL migration: tables, constraints, indexes, partitions | Schema design; constraints as the last line of defence |
+| 5 | Database roles, RLS policies, the transaction helper | Tenant isolation; connection pooling pitfalls |
+| 6 | Login, refresh rotation, reuse detection | Token design; single-use under concurrency |
+| 7 | Create ticket with idempotency key | Idempotency; unique constraints as arbiters |
+| 8 | List with keyset pagination and search | Why `OFFSET` fails; index design |
+| 9 | Edit with `If-Match`; transitions; assign | Optimistic locking |
+| 10 | Messages, internal notes, timeline, outbox writes | Append-only data; transactional outbox |
+| 11 | Seed generator | Deterministic test data |
+
+**Gate:** every transition and permission case passes; 10 simultaneous retries create 1 ticket; 12 simultaneous edits, 1 wins; Agency A gets `404` on Agency B's ids on every route; internal notes are invisible to requesters; timeline rows cannot be changed.
+
+### Phase 2: Intent classification and linkage
+
+| Step | Build | Concept learned |
+|---|---|---|
+| 1 | Text normalisation, TBOH extraction, intent rules in Node | Cheap path first |
+| 2 | Training script and evaluation in Python | TF-IDF, logistic regression, macro-F1, held-out data |
+| 3 | ML service with `/classify` and `/similarity` | Service boundaries; stateless services |
+| 4 | Node client with timeout, circuit breaker and fallback | Designing for a failing dependency |
+| 5 | Intent on create, overrides | Human in the loop |
+| 6 | Linkage and cases | Find-or-create under concurrency |
+
+**Gate:** three contacts on one TBOH land in one case; two simultaneous creates on a new booking share one case; macro-F1 is printed; create still works within its latency budget with the ML service stopped.
+
+### Phase 3: Routing, SLA and escalation
+
+| Step | Build | Concept learned |
+|---|---|---|
+| 1 | SLA maths with business hours and holidays | Time zones; property-based testing |
+| 2 | Routing score | Filter, then rank; explainable decisions |
+| 3 | Presence, shifts, skills; assignment under a row lock | Pessimistic locking; counters |
+| 4 | Workers and scheduled jobs | Job queues; retries; dead letters |
+| 5 | SLA scanner and escalation | Background actors and the state machine |
+| 6 | Queue views | Partial and composite indexes; reading `EXPLAIN ANALYZE` |
+
+**Gate:** the SLA property holds for generated inputs; 100 simultaneous creates never put an agent above cap and never double-assign; a breached ticket is escalated once even with two scanners running.
+
+### Phase 4: Side conversations, email and realtime
+
+| Step | Build | Concept learned |
+|---|---|---|
+| 1 | Side conversations with explicit participants | Modelling ownership separately from assignment |
+| 2 | Outbox relay to Redis Streams | At-least-once delivery; consumer groups |
+| 3 | Email worker | Exactly-once effect from at-least-once delivery |
+| 4 | Signed inbound webhook | HMAC; replay protection |
+| 5 | Socket.IO gateway | Authorising pushed data |
+
+**Gate:** recipients are unchanged after two transfers; a state change reaches a connected client within 2 s; a killed and retried email job sends once; a bad signature is rejected.
+
+### Phase 5: Insights, export, archival and operations
+
+| Step | Build | Concept learned |
+|---|---|---|
+| 1 | Theme tagging, clustering and weekly rollup | Precomputed aggregates |
+| 2 | Streaming CSV export | Cursors, streams and backpressure |
+| 3 | Archival of old partitions | Data lifecycle |
+| 4 | Rate limiting | Token bucket |
+| 5 | Logs, metrics, traces, dashboard | Observability |
+| 6 | Contract tests | Specification as a test |
+
+**Gate:** 100,000 rows export in under 30 s with flat memory, measured; Schemathesis finds no `500`; an archived ticket can be looked up.
+
+### Phase 6: UI, load testing and polish
+
+| Step | Build | Concept learned |
+|---|---|---|
+| 1 | React app: login, queues, ticket page, insights | Server state; optimistic UI with version conflicts |
+| 2 | k6 load tests | Measuring p95; finding the bottleneck |
+| 3 | GitHub Actions | Continuous integration |
+| 4 | Architecture notes, decision records, demo script | Communicating a design |
+
+**Gate:** read p95 under 150 ms and create p95 under 300 ms on a laptop, or this README states the real numbers and the reason.
+
+---
+
+## 19. Repository layout
+
+Planned. Folders appear in the phase that needs them.
+
+```
+api/
+  src/
+    domain/       pure rules: enums, state machine, permissions, SLA, routing, intent rules
+    core/         config, transaction helper, auth, errors, pagination
+    db/           table definitions
+    schemas/      Zod request and response shapes
+    services/     the only place state changes
+    routes/       Express routers
+    workers/      queued and scheduled jobs
+    realtime/     Socket.IO gateway
+  migrations/     numbered SQL files
+  tests/          unit/ and integration/
+ml/               Python service: API, training script, tests
+web/              React app
+seed/             demo data generator
+load/             k6 scripts
+infra/            docker-compose.yml, Prometheus and Grafana config
+docs/adr/         one short decision record per major choice
+```
+
+### How this project is built
+
+- One concept per step, and one commit per step with a short message that says what changed.
+- Each major decision gets a short record in `docs/adr/`: the context, the decision, and its cost.
+- Numbers in this README are replaced by measurements as phases complete. Until then they are targets.
+
+---
+
+## 20. Trade-offs and scaling
+
+### Choices and what they cost
+
+| Choice | Benefit | Cost |
+|---|---|---|
+| Modular monolith | One transaction covers related changes; simple to run | One failure domain; everything deploys together |
+| PostgreSQL for everything durable | One source of truth; strong constraints | A single primary is the write ceiling |
+| Row-Level Security | A forgotten filter cannot leak data | One extra round trip per transaction; policies to maintain for each new table |
+| Optimistic locking | No locks held while people think | Users sometimes see a conflict and must reload |
+| Transactional outbox | Events are never lost or phantom | Slight delay; consumers must be idempotent |
+| Idempotency keys | Safe retries | An extra row per create, and a cleanup job |
+| Denormalised travel dates and agency ids | Fast queues and simple policies | Extra constraints to keep copies honest |
+| Separate Python ML service | Best tools for the job | A second language, a network hop, and a dependency that can fail |
+| Monthly partitions | Cheap archival | The partition key must be in every primary key; partitions must be created ahead |
+
+### If load grew a hundred times
+
+At five million tickets a day the bottlenecks would appear in this order, and each has a known answer:
+
+1. **Read load on queues.** Add read replicas for queue and search queries; accept slightly stale reads there, never for writes.
+2. **Connection count.** Put PgBouncer in front of PostgreSQL in transaction mode. The transaction-local identity setting used for RLS is already compatible with that.
+3. **Search.** Move full-text search to a dedicated search engine fed from the outbox stream.
+4. **Outbox polling.** Replace polling with logical replication (change data capture) and a durable log such as Kafka.
+5. **Realtime fan-out.** Run several gateway instances behind a load balancer with the Redis adapter.
+6. **Write volume.** Partition `tickets` by agency or by time; only after that consider splitting agencies across databases.
+7. **Hot modules.** Routing or notifications could become their own services, cut along the module boundaries that already exist.
+
+None of this is built now. The estimate in section 4 says it is not needed, and building for load that does not exist adds failure modes without adding value.
