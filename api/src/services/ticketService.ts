@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { requirePermission } from "../core/auth.js";
 import { unprocessable } from "../core/errors.js";
 import { decodeCursor, encodeCursor } from "../core/pagination.js";
-import { tx } from "../db/tx.js";
+import { asSystem, tx } from "../db/tx.js";
 import * as ml from "../core/mlClient.js";
 import type { Principal } from "../domain/enums.js";
 import { classifyByRules, decideIntent } from "../domain/intentRules.js";
@@ -10,13 +10,25 @@ import { extractTboh } from "../domain/text.js";
 import type { CreateTicketInput, ListTicketsQuery } from "../schemas/tickets.js";
 import { findOrCreateOpenCase } from "./caseService.js";
 import { addAutomaticLinks, findSimilarTickets } from "./linkService.js";
+import { routeTicket } from "./routingService.js";
 import { addEvent, addOutbox, findTicket, TICKET_COLUMNS, type Ticket } from "./shared.js";
+import { computeSlaFor } from "./slaService.js";
 
 // ---------------------------------------------------------------------------
 // Create
 // ---------------------------------------------------------------------------
 
 export type CreateResult = { ticket: Ticket; replayed: boolean };
+
+// What create needs from the booking, read in one query.
+type BookingForTicket = {
+  id: string;
+  agency_id: string;
+  region_code: string;
+  check_in_at: Date;
+  lcd_at: Date;
+  now: Date; // the transaction's time
+};
 
 export async function createTicket(
   principal: Principal,
@@ -88,8 +100,11 @@ export async function createTicket(
 
     // The booking supplies the agency and the travel dates. RLS means a
     // requester can only find bookings of their own agency.
-    const bookingResult = await db.query<{ id: string; agency_id: string }>(
-      "SELECT id, agency_id FROM bookings WHERE tboh = $1",
+    const bookingResult = await db.query<BookingForTicket>(
+      `SELECT id, agency_id, region_code, lcd_at,
+              (check_in_date + time '14:00') AT TIME ZONE hotel_time_zone AS check_in_at,
+              now() AS now
+         FROM bookings WHERE tboh = $1`,
       [tboh],
     );
     const booking = bookingResult.rows[0];
@@ -101,21 +116,29 @@ export async function createTicket(
     // Every ticket belongs to the open case of its booking (hazard 6).
     const caseId = await findOrCreateOpenCase(db, booking);
 
-    // Travel fields are copied from the booking in SQL. The check-in date
-    // becomes an instant using the hotel's time zone and a 14:00 check-in time.
+    // The SLA deadline, from the priority and the booking's own deadlines.
+    // `booking.now` is the transaction's time, the same value the database
+    // puts in created_at, so the deadline is measured from the right instant.
+    const sla = await computeSlaFor(db, {
+      regionCode: booking.region_code,
+      priority: input.priority,
+      createdAt: booking.now,
+      checkInAt: booking.check_in_at,
+      lcdAt: booking.lcd_at,
+    });
+
+    // Travel fields are copied from the booking. The check-in date becomes an
+    // instant using the hotel's time zone and a 14:00 check-in time.
     const inserted = await db.query<Ticket>(
       `INSERT INTO tickets (agency_id, booking_id, case_id, requester_id, subject, body, priority,
                             intent, intent_source, intent_confidence, model_version, needs_review,
-                            check_in_at, lcd_at, region_code)
-       SELECT b.agency_id, b.id, $11, $2, $3, $4, $5,
-              $6, $7, $8, $9, $10,
-              (b.check_in_date + time '14:00') AT TIME ZONE b.hotel_time_zone,
-              b.lcd_at, b.region_code
-         FROM bookings b
-        WHERE b.id = $1
+                            check_in_at, lcd_at, region_code, sla_due_at, sla_at_risk_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
        RETURNING ${TICKET_COLUMNS}`,
       [
+        booking.agency_id,
         booking.id,
+        caseId,
         principal.userId,
         input.subject,
         input.body,
@@ -125,22 +148,34 @@ export async function createTicket(
         decision.confidence,
         decision.modelVersion,
         decision.needsReview,
-        caseId,
+        booking.check_in_at,
+        booking.lcd_at,
+        booking.region_code,
+        sla.dueAt,
+        sla.atRiskAt,
       ],
     );
-    const ticket = inserted.rows[0]!;
+    const created = inserted.rows[0]!;
 
-    await addEvent(db, ticket, principal.userId, "ticket_created", {
-      priority: ticket.priority,
-      intent: ticket.intent,
-      intent_source: ticket.intent_source,
-      case_id: ticket.case_id,
+    await addEvent(db, created, principal.userId, "ticket_created", {
+      priority: created.priority,
+      intent: created.intent,
+      intent_source: created.intent_source,
+      case_id: created.case_id,
+      sla_due_at: created.sla_due_at,
+      sla_basis: sla.basis,
     });
-    await addOutbox(db, ticket.id, "ticket.created", {
-      ticket_id: ticket.id,
-      case_id: ticket.case_id,
+    await addOutbox(db, created.id, "ticket.created", {
+      ticket_id: created.id,
+      case_id: created.case_id,
     });
-    await addAutomaticLinks(db, ticket, similar);
+    await addAutomaticLinks(db, created, similar);
+
+    // Try to give the ticket to an agent straight away. If nobody can take
+    // it, it stays 'new' in the triage queue and the retry job tries later.
+    // Routing is the system's work, not the requester's: a requester's
+    // identity cannot even see the agents (RLS). See asSystem in db/tx.ts.
+    const ticket = await asSystem(db, principal, () => routeTicket(db, created, booking.now));
 
     // Save the response on the key, in the same transaction as the ticket.
     await db.query(

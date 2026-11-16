@@ -7,7 +7,8 @@ import { z } from "zod";
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   API_PORT: z.coerce.number().int().min(1).max(65535).default(3000),
-  LOG_LEVEL: z.enum(["debug", "info", "warn", "error", "silent"]).default("info"),
+  // Not set: "info" normally, "silent" while testing (set it to see errors in a test run).
+  LOG_LEVEL: z.enum(["debug", "info", "warn", "error", "silent"]).optional(),
 
   POSTGRES_HOST: z.string().min(1).default("localhost"),
   POSTGRES_PORT: z.coerce.number().int().default(5432),
@@ -46,7 +47,7 @@ export function loadConfig(env: Record<string, string | undefined>) {
   return {
     nodeEnv: e.NODE_ENV,
     port: e.API_PORT,
-    logLevel: e.NODE_ENV === "test" ? "silent" : e.LOG_LEVEL,
+    logLevel: e.LOG_LEVEL ?? (e.NODE_ENV === "test" ? "silent" : "info"),
     db: {
       host: e.POSTGRES_HOST,
       port: e.POSTGRES_PORT,

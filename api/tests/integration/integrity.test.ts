@@ -37,9 +37,11 @@ async function insertTicket(agencyId: string, bookingId: string, requesterId: st
   );
   const result = await ownerPool.query<{ id: string }>(
     `INSERT INTO tickets (agency_id, booking_id, case_id, requester_id, subject, body,
-                          intent_source, check_in_at, lcd_at, region_code)
+                          intent_source, check_in_at, lcd_at, region_code,
+                          sla_due_at, sla_at_risk_at)
      VALUES ($1, $2, (SELECT id FROM cases WHERE booking_id = $2 AND status = 'open'),
-             $3, 'Subject', 'Body', 'manual', now(), now(), 'EU')
+             $3, 'Subject', 'Body', 'manual', now(), now(), 'EU',
+             now() + interval '8 hours', now() + interval '6 hours')
      RETURNING id`,
     [agencyId, bookingId, requesterId],
   );
@@ -244,6 +246,8 @@ describe("append-only data and no deletes", () => {
     "cases",
     "ticket_links",
     "intent_overrides",
+    "agent_presence",
+    "routing_decisions",
   ])("the app role cannot DELETE from %s", async (table) => {
     await asApp(asAgent(), async (db) => {
       await expectDbError(() => db.query(`DELETE FROM ${table}`), PERMISSION_DENIED);

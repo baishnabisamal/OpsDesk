@@ -1,37 +1,64 @@
-import request from "supertest";
-import { afterAll, describe, expect, it } from "vitest";
+import argon2 from "argon2";
+import pg from "pg";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { migrate } from "../../scripts/migrate.js";
 import { seed, SEED_PASSWORD } from "../../scripts/seed.js";
-import { createApp } from "../../src/app.js";
+import { config } from "../../src/core/config.js";
 import { closeTestPools, ownerPool } from "./helpers.js";
 
-const app = createApp();
+// The seed fills every region with demo agents and tickets. In the shared
+// test database that would disturb other test files (a routing test could
+// pick a demo agent). So this file makes a second, empty database in the
+// same PostgreSQL container, migrates it, and seeds that one.
+const SEED_DB = "opsdesk_seed_test";
 
-afterAll(closeTestPools);
+let seedPool: pg.Pool;
+
+beforeAll(async () => {
+  await ownerPool.query(`CREATE DATABASE ${SEED_DB}`);
+  await migrate(() => {}, SEED_DB);
+  seedPool = new pg.Pool({
+    host: config.db.host,
+    port: config.db.port,
+    database: SEED_DB,
+    user: config.db.owner.user,
+    password: config.db.owner.password,
+    max: 2,
+  });
+});
+
+afterAll(async () => {
+  await seedPool.end();
+  await closeTestPools();
+});
 
 // A fingerprint of everything the seed wrote: row counts plus a checksum of
-// the ticket ids, statuses and creation times. Other test files add their own
-// rows to the same database, so only rows of the seeded agencies are counted.
+// the ticket ids, statuses, cases and timestamps.
 async function fingerprint() {
-  const result = await ownerPool.query(`
-    WITH seeded AS (SELECT id FROM agencies WHERE slug IN
-      ('skyline-travels', 'globe-trotters', 'sunrise-holidays', 'atlas-tours', 'bluewave-trips'))
+  const result = await seedPool.query(`
     SELECT
-      (SELECT count(*)::int FROM seeded) AS agencies,
-      (SELECT count(*)::int FROM users WHERE email LIKE '%@opsdesk.test') AS staff,
-      (SELECT count(*)::int FROM users WHERE agency_id IN (SELECT id FROM seeded)) AS requesters,
-      (SELECT count(*)::int FROM bookings WHERE agency_id IN (SELECT id FROM seeded)) AS bookings,
-      (SELECT count(*)::int FROM tickets WHERE agency_id IN (SELECT id FROM seeded)) AS tickets,
-      (SELECT count(*)::int FROM messages WHERE agency_id IN (SELECT id FROM seeded)) AS messages,
-      (SELECT count(*)::int FROM ticket_events WHERE agency_id IN (SELECT id FROM seeded)) AS events,
-      (SELECT md5(string_agg(id::text || status || created_at::text, ',' ORDER BY id))
-         FROM tickets WHERE agency_id IN (SELECT id FROM seeded)) AS ticket_checksum
+      (SELECT count(*)::int FROM agencies) AS agencies,
+      (SELECT count(*)::int FROM users WHERE role <> 'requester') AS staff,
+      (SELECT count(*)::int FROM users WHERE role = 'requester') AS requesters,
+      (SELECT count(*)::int FROM bookings) AS bookings,
+      (SELECT count(*)::int FROM tickets) AS tickets,
+      (SELECT count(*)::int FROM cases) AS cases,
+      (SELECT count(*)::int FROM messages) AS messages,
+      (SELECT count(*)::int FROM ticket_events) AS events,
+      (SELECT count(*)::int FROM agent_presence) AS presence,
+      (SELECT count(*)::int FROM agent_shifts) AS shifts,
+      (SELECT count(*)::int FROM agent_skills) AS skills,
+      (SELECT md5(string_agg(
+                id::text || status || case_id::text || created_at::text || sla_due_at::text,
+                ',' ORDER BY id))
+         FROM tickets) AS ticket_checksum
   `);
   return result.rows[0];
 }
 
 describe("seed", () => {
   it("creates the expected data, and running it again changes nothing", async () => {
-    await seed(() => {});
+    await seed(() => {}, SEED_DB);
     const first = await fingerprint();
 
     expect(first).toMatchObject({
@@ -40,38 +67,48 @@ describe("seed", () => {
       requesters: 10,
       bookings: 40,
       tickets: 80,
+      presence: 12, // one per agent
+      shifts: 60, // 12 agents x 5 weekdays
     });
     expect(first.messages).toBeGreaterThan(0);
     expect(first.events).toBeGreaterThanOrEqual(80);
+    expect(first.cases).toBeGreaterThan(0);
 
-    await seed(() => {});
+    await seed(() => {}, SEED_DB);
     const second = await fingerprint();
     expect(second).toEqual(first);
   });
 
-  it("seeded users can log in with the demo password", async () => {
-    const res = await request(app)
-      .post("/api/v1/auth/login")
-      .send({ email: "agent1.eu@opsdesk.test", password: SEED_PASSWORD });
-    expect(res.status).toBe(200);
-    expect(res.body.user.role).toBe("agent");
+  it("seeded users have the demo password", async () => {
+    const result = await seedPool.query<{ password_hash: string; role: string }>(
+      "SELECT password_hash, role FROM users WHERE email = 'agent1.eu@opsdesk.test'",
+    );
+    expect(result.rows[0]!.role).toBe("agent");
+    expect(await argon2.verify(result.rows[0]!.password_hash, SEED_PASSWORD)).toBe(true);
   });
 
-  it("seeded tickets are served by the API", async () => {
-    const login = await request(app)
-      .post("/api/v1/auth/login")
-      .send({ email: "user1@skyline-travels.test", password: SEED_PASSWORD });
-    const res = await request(app)
-      .get("/api/v1/tickets")
-      .set("Authorization", `Bearer ${login.body.access_token}`)
-      .query({ limit: 100 });
+  it("every seeded agent's load counter equals a count of their live tickets", async () => {
+    const drift = await seedPool.query(`
+      SELECT p.user_id
+        FROM agent_presence p
+        LEFT JOIN tickets t
+          ON t.assignee_id = p.user_id AND t.status IN ('open', 'pending', 'escalated')
+       GROUP BY p.user_id, p.open_count
+      HAVING p.open_count <> count(t.id)`);
+    expect(drift.rows).toEqual([]);
+  });
 
-    expect(res.status).toBe(200);
-    expect(res.body.items.length).toBeGreaterThan(0);
-    // A requester only ever sees their own agency.
-    const agencyIds = new Set(
-      res.body.items.map((ticket: { agency_id: string }) => ticket.agency_id),
-    );
-    expect(agencyIds.size).toBe(1);
+  it("a case is closed exactly when all its tickets are closed", async () => {
+    const wrong = await seedPool.query(`
+      SELECT c.id
+        FROM cases c
+       WHERE (c.status = 'closed') <>
+             NOT EXISTS (SELECT 1 FROM tickets t WHERE t.case_id = c.id AND t.status <> 'closed')`);
+    expect(wrong.rows).toEqual([]);
+  });
+
+  it("agents start offline, so demo tickets are not routed until someone logs in", async () => {
+    const online = await seedPool.query("SELECT 1 FROM agent_presence WHERE is_online");
+    expect(online.rowCount).toBe(0);
   });
 });

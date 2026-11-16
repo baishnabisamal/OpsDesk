@@ -157,3 +157,27 @@ ticketsRouter.delete("/:id/links/:linkedId", async (req, res) => {
   await linkService.unlinkTickets(getPrincipal(res), id, linkedId);
   res.status(204).end();
 });
+
+// Escalate and de-escalate are status changes with their own names in the
+// API. They go through the same transition function, so the same rules and
+// side effects apply (owner changes, agent load, timeline).
+ticketsRouter.post("/:id/escalate", async (req, res) => {
+  const id = parseId(req.params.id);
+  const version = parseIfMatch(req);
+  const ticket = await workflowService.transitionTicket(
+    getPrincipal(res),
+    id,
+    version,
+    "escalated",
+  );
+  setETag(res, ticket.version);
+  res.json(ticket);
+});
+
+ticketsRouter.post("/:id/de-escalate", async (req, res) => {
+  const id = parseId(req.params.id);
+  const version = parseIfMatch(req);
+  const ticket = await workflowService.transitionTicket(getPrincipal(res), id, version, "open");
+  setETag(res, ticket.version);
+  res.json(ticket);
+});

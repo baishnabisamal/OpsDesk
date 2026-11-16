@@ -59,6 +59,8 @@ const ROUTE_BODIES: Record<string, object | null> = {
   "POST /:id/messages": { body: "hello" },
   "GET /:id/messages": null,
   "GET /:id/timeline": null,
+  "POST /:id/escalate": null,
+  "POST /:id/de-escalate": null,
   "GET /:id/links": null,
   "POST /:id/links": { ticket_id: randomUUID() },
   "DELETE /:id/links/:linkedId": null,

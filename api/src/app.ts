@@ -4,6 +4,7 @@ import { requestLogger } from "./core/logger.js";
 import { authRouter } from "./routes/auth.js";
 import { casesRouter } from "./routes/cases.js";
 import { healthRouter } from "./routes/health.js";
+import { meRouter } from "./routes/me.js";
 import { ticketsRouter } from "./routes/tickets.js";
 
 // Builds the Express app without starting a server, so tests can use it
@@ -18,6 +19,7 @@ export function createApp() {
   app.use("/api/v1/auth", authRouter);
   app.use("/api/v1/tickets", ticketsRouter);
   app.use("/api/v1/cases", casesRouter);
+  app.use("/api/v1/me", meRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

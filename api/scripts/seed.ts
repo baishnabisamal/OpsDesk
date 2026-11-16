@@ -186,6 +186,25 @@ const INTERNAL_NOTES = [
   "Supplier confirmed by email.",
 ];
 
+const SKILL_INTENTS = [
+  "booking_not_found",
+  "cancellation",
+  "amendment",
+  "refund",
+  "voucher",
+  "payment",
+];
+
+const HOLIDAYS = [
+  ["EU", "2026-12-25", "Christmas Day"],
+  ["EU", "2027-01-01", "New Year's Day"],
+  ["AMER", "2026-11-26", "Thanksgiving"],
+  ["AMER", "2026-12-25", "Christmas Day"],
+  ["AMER", "2027-01-01", "New Year's Day"],
+  ["MEA", "2026-12-02", "National Day"],
+  ["APAC", "2027-01-01", "New Year's Day"],
+] as const;
+
 // Listed more than once = more likely to be picked.
 const STATUSES = [
   "new",
@@ -216,7 +235,10 @@ const PRIORITIES = ["low", "normal", "normal", "normal", "high", "high", "urgent
 
 type SeedUser = { id: string; name: string };
 
-export async function seed(log: (line: string) => void = console.log) {
+export async function seed(
+  log: (line: string) => void = console.log,
+  database = config.db.database,
+) {
   // Start the sequence from the beginning on every call, so calling seed()
   // twice in one process gives the same ids both times.
   random = createRandom(SEED);
@@ -226,7 +248,7 @@ export async function seed(log: (line: string) => void = console.log) {
   }
 
   const passwordHash = await hashPassword(SEED_PASSWORD);
-  const client = ownerClient();
+  const client = ownerClient(database);
   await client.connect();
 
   try {
@@ -354,6 +376,15 @@ export async function seed(log: (line: string) => void = console.log) {
       const isDone = status === "resolved" || status === "closed";
       const lastChange = status === "new" ? createdAt : status === "open" ? assignedAt : finishedAt;
 
+      // The SLA deadline. Demo tickets were "created" in the past, so a real
+      // deadline would already be missed and the scanner would escalate the
+      // whole demo at once. Tickets that are still being worked on get a
+      // deadline 30 to 89 days after the base date instead (worked out from
+      // the ticket number, so it is the same every run).
+      const slaDueAt = isDone
+        ? minutesAfter(createdAt, 2 * 24 * 60)
+        : minutesAfter(BASE_DATE, (30 + (n % 60)) * 24 * 60);
+
       // The case of this booking, created the first time the booking gets a
       // ticket. Its id is worked out from the booking id, so it is the same
       // on every run.
@@ -369,12 +400,13 @@ export async function seed(log: (line: string) => void = console.log) {
       await client.query(
         `INSERT INTO tickets (id, agency_id, booking_id, case_id, requester_id, subject, body, intent, intent_source,
                               priority, status, assignee_id, team_id, check_in_at, lcd_at, region_code,
-                              created_at, updated_at, resolved_at, closed_at, version)
+                              created_at, updated_at, resolved_at, closed_at, version,
+                              sla_due_at, sla_at_risk_at, sla_paused_at)
          SELECT $1, b.agency_id, b.id,
                 (SELECT id FROM cases WHERE booking_id = b.id ORDER BY created_at, id LIMIT 1),
                 $3, $4, $5, $6, 'manual', $7, $8, $9, $10,
                 (b.check_in_date + time '14:00') AT TIME ZONE b.hotel_time_zone, b.lcd_at,
-                b.region_code, $11, $12, $13, $14, $15
+                b.region_code, $11, $12, $13, $14, $15, $16, $17, $18
            FROM bookings b WHERE b.id = $2
          ON CONFLICT DO NOTHING`,
         [
@@ -393,6 +425,9 @@ export async function seed(log: (line: string) => void = console.log) {
           isDone ? finishedAt : null,
           status === "closed" ? minutesAfter(finishedAt, 60) : null,
           status === "new" ? 1 : status === "open" ? 2 : 3,
+          slaDueAt,
+          minutesBefore(slaDueAt, 24 * 60),
+          status === "pending" ? lastChange : null,
         ],
       );
 
@@ -464,6 +499,49 @@ export async function seed(log: (line: string) => void = console.log) {
           );
         }
       }
+    }
+
+    // What routing needs to know about each agent. This block comes after
+    // the tickets on purpose: it uses the random generator, and putting it
+    // earlier would change every id generated above.
+    const allAgents = [...agentsByRegion.values()].flatMap((team) => team.agents);
+    for (const agent of allAgents) {
+      // Monday to Friday, 09:00 to 18:00 in the region's local time.
+      await client.query(
+        `INSERT INTO agent_shifts (user_id, weekday, start_minute, end_minute)
+         SELECT $1, day, 540, 1080 FROM generate_series(1, 5) AS day
+         ON CONFLICT DO NOTHING`,
+        [agent.id],
+      );
+      // Two skills each.
+      for (const intent of [pick(SKILL_INTENTS), pick(SKILL_INTENTS)]) {
+        await client.query(
+          "INSERT INTO agent_skills (user_id, intent) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+          [agent.id, intent],
+        );
+      }
+      // Presence: offline until the agent logs in and goes online
+      // (PUT /me/presence). open_count is counted from the tickets, so it is
+      // right by construction; on a re-run it is simply recounted.
+      await client.query(
+        `INSERT INTO agent_presence (user_id, is_online, open_count, max_open)
+         SELECT $1, false, count(*), GREATEST(20, count(*))
+           FROM tickets
+          WHERE assignee_id = $1 AND status IN ('open', 'pending', 'escalated')
+         ON CONFLICT (user_id) DO UPDATE
+           SET open_count = EXCLUDED.open_count,
+               max_open = GREATEST(agent_presence.max_open, EXCLUDED.open_count)`,
+        [agent.id],
+      );
+    }
+
+    // A few public holidays, so the SLA maths has something to skip.
+    for (const [region, holiday, name] of HOLIDAYS) {
+      await client.query(
+        `INSERT INTO region_holidays (region_code, holiday, name) VALUES ($1, $2, $3)
+         ON CONFLICT DO NOTHING`,
+        [region, holiday, name],
+      );
     }
 
     // A case whose tickets are all closed is closed too.

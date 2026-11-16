@@ -14,18 +14,22 @@ import { config } from "../src/core/config.js";
 
 const MIGRATIONS_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "migrations");
 
-export function ownerClient() {
+// `database` is only passed by tests, which use a second database.
+export function ownerClient(database = config.db.database) {
   return new pg.Client({
     host: config.db.host,
     port: config.db.port,
-    database: config.db.database,
+    database,
     user: config.db.owner.user,
     password: config.db.owner.password,
   });
 }
 
-export async function migrate(log: (line: string) => void = console.log) {
-  const client = ownerClient();
+export async function migrate(
+  log: (line: string) => void = console.log,
+  database = config.db.database,
+) {
+  const client = ownerClient(database);
   await client.connect();
   try {
     await client.query(`

@@ -22,6 +22,9 @@ const PERMISSIONS = {
   // Linking and unlinking tickets that are about the same problem.
   "ticket:link": STAFF,
   "case:read": EVERYONE,
+  // Going online or offline for routing.
+  "presence:update": STAFF,
+  "queue:read": STAFF,
   "message:read": EVERYONE,
   "message:write_public": EVERYONE,
   "message:write_internal": STAFF,

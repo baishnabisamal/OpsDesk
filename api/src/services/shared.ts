@@ -2,6 +2,7 @@ import type { PoolClient } from "pg";
 import { notFound } from "../core/errors.js";
 import type { Intent, Priority, TicketStatus, Visibility } from "../domain/enums.js";
 import type { IntentSource } from "../domain/intentRules.js";
+import type { SlaState } from "../domain/sla.js";
 
 // Things every ticket service needs: the ticket row shape, and the helpers
 // that write a timeline event and an outbox row.
@@ -28,6 +29,11 @@ export type Ticket = {
   check_in_at: Date;
   lcd_at: Date;
   region_code: string;
+  sla_due_at: Date;
+  sla_at_risk_at: Date;
+  sla_state: SlaState;
+  sla_paused_at: Date | null;
+  sla_paused_total: number; // seconds
   created_at: Date;
   updated_at: Date;
   resolved_at: Date | null;
@@ -37,7 +43,7 @@ export type Ticket = {
 
 export const TICKET_COLUMNS = `id, agency_id, booking_id, case_id, requester_id, subject, body, intent,
   intent_source, intent_confidence, model_version, needs_review, priority, status, assignee_id, team_id, check_in_at, lcd_at, region_code,
-  created_at, updated_at, resolved_at, closed_at, version`;
+  sla_due_at, sla_at_risk_at, sla_state, sla_paused_at, sla_paused_total, created_at, updated_at, resolved_at, closed_at, version`;
 
 // ---------------------------------------------------------------------------
 // Helpers shared by every state change

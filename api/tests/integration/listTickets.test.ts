@@ -156,12 +156,13 @@ describe("GET /tickets", () => {
 
   it("the agency index can serve a requester's list without sorting", async () => {
     // Ask PostgreSQL for its plan. The test table is tiny, and on a tiny table
-    // the planner may simply read every row, so sequential scans are switched
-    // off for this one transaction. That shows the index fits the query.
+    // the planner may simply read every row and sort, so sequential and bitmap
+    // scans are switched off for this one transaction. That shows the index fits the query.
     const client = await ownerPool.connect();
     try {
       await client.query("BEGIN");
       await client.query("SET LOCAL enable_seqscan = off");
+      await client.query("SET LOCAL enable_bitmapscan = off");
       const plan = await client.query<{ "QUERY PLAN": string }>(
         `EXPLAIN SELECT id FROM tickets WHERE agency_id = '${requester.agencyId}'
           ORDER BY created_at DESC, id DESC LIMIT 21`,
