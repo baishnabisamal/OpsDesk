@@ -10,6 +10,8 @@ import {
   transitionSchema,
   updateTicketSchema,
 } from "../schemas/tickets.js";
+import { createMessageSchema } from "../schemas/messages.js";
+import * as messageService from "../services/messageService.js";
 import * as ticketService from "../services/ticketService.js";
 import * as workflowService from "../services/ticketWorkflowService.js";
 
@@ -105,4 +107,21 @@ ticketsRouter.post("/:id/assign", async (req, res) => {
   );
   setETag(res, ticket.version);
   res.json(ticket);
+});
+
+ticketsRouter.post("/:id/messages", async (req, res) => {
+  const id = parseId(req.params.id);
+  const body = createMessageSchema.parse(req.body);
+  const message = await messageService.addMessage(getPrincipal(res), id, body);
+  res.status(201).json(message);
+});
+
+ticketsRouter.get("/:id/messages", async (req, res) => {
+  const items = await messageService.listMessages(getPrincipal(res), parseId(req.params.id));
+  res.json({ items });
+});
+
+ticketsRouter.get("/:id/timeline", async (req, res) => {
+  const items = await messageService.listTimeline(getPrincipal(res), parseId(req.params.id));
+  res.json({ items });
 });
