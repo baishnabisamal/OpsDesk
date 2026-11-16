@@ -7,6 +7,7 @@ const validEnv = {
   POSTGRES_PASSWORD: "owner-password",
   APP_DB_PASSWORD: "app-password",
   JWT_SECRET: "x".repeat(32),
+  ML_SHARED_SECRET: "m".repeat(16),
 };
 
 describe("config", () => {

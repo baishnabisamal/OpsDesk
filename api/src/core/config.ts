@@ -24,6 +24,11 @@ const envSchema = z.object({
   JWT_SECRET: z.string().min(32, "must be at least 32 characters"),
   ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(900),
   REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(30),
+
+  // The Python ML service. Ticket create never waits longer than the timeout.
+  ML_URL: z.string().url().default("http://127.0.0.1:8001"),
+  ML_SHARED_SECRET: z.string().min(16, "must be at least 16 characters"),
+  ML_TIMEOUT_MS: z.coerce.number().int().positive().default(150),
 });
 
 export type Config = ReturnType<typeof loadConfig>;
@@ -52,6 +57,11 @@ export function loadConfig(env: Record<string, string | undefined>) {
     jwtSecret: e.JWT_SECRET,
     accessTokenTtlSeconds: e.ACCESS_TOKEN_TTL_SECONDS,
     refreshTokenTtlDays: e.REFRESH_TOKEN_TTL_DAYS,
+    ml: {
+      url: e.ML_URL.replace(/\/$/, ""), // no trailing slash
+      sharedSecret: e.ML_SHARED_SECRET,
+      timeoutMs: e.ML_TIMEOUT_MS,
+    },
   };
 }
 

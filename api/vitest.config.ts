@@ -19,6 +19,7 @@ export default defineConfig({
             POSTGRES_PASSWORD: "unused",
             APP_DB_PASSWORD: "unused-password",
             JWT_SECRET: "unit-test-secret-unit-test-secret-123",
+            ML_SHARED_SECRET: "unit-test-ml-secret",
           },
         },
       },

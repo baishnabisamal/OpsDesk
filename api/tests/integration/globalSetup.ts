@@ -29,6 +29,12 @@ export async function setup() {
   process.env.APP_DB_USER = "opsdesk_app";
   process.env.APP_DB_PASSWORD = "app-test-password";
   process.env.JWT_SECRET = "test-secret-test-secret-test-secret-123";
+  // No ML service runs during tests. Nothing listens on this port, so most
+  // test files exercise the "ML is down" path. ml.test.ts starts a small fake
+  // ML server on this port to test the other paths.
+  process.env.ML_URL = "http://127.0.0.1:58211";
+  process.env.ML_SHARED_SECRET = "test-ml-shared-secret";
+  process.env.ML_TIMEOUT_MS = "150";
 
   // Imported here, after the settings exist, because config is read on import.
   const { migrate } = await import("../../scripts/migrate.js");
