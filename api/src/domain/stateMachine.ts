@@ -37,6 +37,12 @@ export function canTransition(from: TicketStatus, to: TicketStatus, actor: Actor
   return allowed !== undefined && allowed.includes(actor);
 }
 
+// True when the move exists in the table for at least one actor. It lets the
+// API tell "nobody can do this" (409) apart from "you cannot do this" (403).
+export function isKnownTransition(from: TicketStatus, to: TicketStatus): boolean {
+  return TRANSITIONS[from][to] !== undefined;
+}
+
 // The timestamp columns that must change together with the status.
 // `undefined` means "leave the column as it is".
 export type TransitionEffects = {

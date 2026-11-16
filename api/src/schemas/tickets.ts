@@ -30,3 +30,20 @@ export const listTicketsSchema = z
   .strict();
 
 export type ListTicketsQuery = z.infer<typeof listTicketsSchema>;
+
+// PATCH /tickets/:id. Status and assignee are NOT here: they have their own
+// endpoints because they have rules and side effects.
+export const updateTicketSchema = z
+  .object({
+    subject: z.string().trim().min(1).max(200).optional(),
+    priority: z.enum(PRIORITIES).optional(),
+    intent: z.enum(INTENTS).optional(),
+  })
+  .strict()
+  .refine((value) => Object.keys(value).length > 0, { message: "Send at least one field." });
+
+export type UpdateTicketInput = z.infer<typeof updateTicketSchema>;
+
+export const transitionSchema = z.object({ to: z.enum(TICKET_STATUSES) }).strict();
+
+export const assignSchema = z.object({ assignee_id: z.string().uuid() }).strict();

@@ -1,9 +1,20 @@
-import { Router, type Response } from "express";
+import { Router, type Request, type Response } from "express";
 import { z } from "zod";
 import { authenticate, getPrincipal } from "../core/auth.js";
-import { badRequest, notFound } from "../core/errors.js";
-import { createTicketSchema, idempotencyKeySchema, listTicketsSchema } from "../schemas/tickets.js";
+import { badRequest, notFound, preconditionRequired } from "../core/errors.js";
+import {
+  assignSchema,
+  createTicketSchema,
+  idempotencyKeySchema,
+  listTicketsSchema,
+  transitionSchema,
+  updateTicketSchema,
+} from "../schemas/tickets.js";
 import * as ticketService from "../services/ticketService.js";
+import * as workflowService from "../services/ticketWorkflowService.js";
+
+// Routes only do three things: read the request, call one service function,
+// and shape the response. No rules live here.
 
 export const ticketsRouter = Router();
 
@@ -11,7 +22,7 @@ export const ticketsRouter = Router();
 ticketsRouter.use(authenticate);
 
 // An id that is not a UUID cannot exist, so it is a 404 like any unknown id.
-function parseId(value: unknown): string {
+export function parseId(value: unknown): string {
   const parsed = z.string().uuid().safeParse(value);
   if (!parsed.success) throw notFound("Ticket not found.");
   return parsed.data;
@@ -20,6 +31,19 @@ function parseId(value: unknown): string {
 // The version travels as an ETag header, in quotes as HTTP requires.
 function setETag(res: Response, version: number) {
   res.setHeader("ETag", `"${version}"`);
+}
+
+// Reads the version the client last saw from If-Match: "3" -> 3.
+function parseIfMatch(req: Request): number {
+  const header = req.header("If-Match");
+  if (header === undefined) {
+    throw preconditionRequired("Send the ticket's ETag in an If-Match header.");
+  }
+  const match = /^"(\d{1,9})"$/.exec(header.trim());
+  if (!match) {
+    throw badRequest('The If-Match header must look like "3".');
+  }
+  return Number(match[1]);
 }
 
 ticketsRouter.post("/", async (req, res) => {
@@ -44,6 +68,41 @@ ticketsRouter.get("/", async (req, res) => {
 
 ticketsRouter.get("/:id", async (req, res) => {
   const ticket = await ticketService.getTicket(getPrincipal(res), parseId(req.params.id));
+  setETag(res, ticket.version);
+  res.json(ticket);
+});
+
+ticketsRouter.patch("/:id", async (req, res) => {
+  const id = parseId(req.params.id);
+  const version = parseIfMatch(req);
+  const input = updateTicketSchema.parse(req.body);
+
+  const ticket = await workflowService.updateTicket(getPrincipal(res), id, version, input);
+  setETag(res, ticket.version);
+  res.json(ticket);
+});
+
+ticketsRouter.post("/:id/transitions", async (req, res) => {
+  const id = parseId(req.params.id);
+  const version = parseIfMatch(req);
+  const body = transitionSchema.parse(req.body);
+
+  const ticket = await workflowService.transitionTicket(getPrincipal(res), id, version, body.to);
+  setETag(res, ticket.version);
+  res.json(ticket);
+});
+
+ticketsRouter.post("/:id/assign", async (req, res) => {
+  const id = parseId(req.params.id);
+  const version = parseIfMatch(req);
+  const body = assignSchema.parse(req.body);
+
+  const ticket = await workflowService.assignTicket(
+    getPrincipal(res),
+    id,
+    version,
+    body.assignee_id,
+  );
   setETag(res, ticket.version);
   res.json(ticket);
 });
