@@ -1,16 +1,18 @@
 import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { config } from "../../src/core/config.js";
 
 // A stand-in for the Python ML service, so tests can decide exactly how "the
 // model" behaves: what it answers, how slowly, or not at all.
 //
-// It listens on the port in ML_URL, checks the shared-secret header like the
-// real service, and counts the calls it receives.
+// It checks the shared-secret header like the real service, and records the
+// calls it receives.
 
 type Handler = (path: string, body: Record<string, unknown>) => object;
 
 export class FakeMl {
   private server: Server | null = null;
+  private deadUrl = config.ml.url;
   calls: { path: string; body: Record<string, unknown> }[] = [];
 
   // What to answer. Tests replace these.
@@ -37,8 +39,13 @@ export class FakeMl {
         }, this.delayMs);
       });
     });
-    const port = Number(new URL(config.ml.url).port);
-    await new Promise<void>((resolve) => this.server!.listen(port, "127.0.0.1", resolve));
+    // Port 0 asks the operating system for any free port, so test files that
+    // run at the same time each get their own fake and cannot disturb each
+    // other. The ML client in this test process is then pointed at it.
+    await new Promise<void>((resolve) => this.server!.listen(0, "127.0.0.1", resolve));
+    const address = this.server.address() as AddressInfo;
+    this.deadUrl = config.ml.url;
+    config.ml.url = `http://127.0.0.1:${address.port}`;
   }
 
   async stop() {
@@ -47,6 +54,8 @@ export class FakeMl {
     this.server = null;
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
+    // Point the client back at the address where nothing listens.
+    config.ml.url = this.deadUrl;
   }
 
   // Back to a working, instant service with no recorded calls.

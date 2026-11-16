@@ -354,11 +354,25 @@ export async function seed(log: (line: string) => void = console.log) {
       const isDone = status === "resolved" || status === "closed";
       const lastChange = status === "new" ? createdAt : status === "open" ? assignedAt : finishedAt;
 
+      // The case of this booking, created the first time the booking gets a
+      // ticket. Its id is worked out from the booking id, so it is the same
+      // on every run.
       await client.query(
-        `INSERT INTO tickets (id, agency_id, booking_id, requester_id, subject, body, intent, intent_source,
+        `INSERT INTO cases (id, booking_id, agency_id, created_at)
+         SELECT md5('case:' || b.id::text)::uuid, b.id, b.agency_id, b.created_at
+           FROM bookings b
+          WHERE b.id = $1 AND NOT EXISTS (SELECT 1 FROM cases WHERE booking_id = b.id)
+         ON CONFLICT DO NOTHING`,
+        [booking.id],
+      );
+
+      await client.query(
+        `INSERT INTO tickets (id, agency_id, booking_id, case_id, requester_id, subject, body, intent, intent_source,
                               priority, status, assignee_id, team_id, check_in_at, lcd_at, region_code,
                               created_at, updated_at, resolved_at, closed_at, version)
-         SELECT $1, b.agency_id, b.id, $3, $4, $5, $6, 'manual', $7, $8, $9, $10,
+         SELECT $1, b.agency_id, b.id,
+                (SELECT id FROM cases WHERE booking_id = b.id ORDER BY created_at, id LIMIT 1),
+                $3, $4, $5, $6, 'manual', $7, $8, $9, $10,
                 (b.check_in_date + time '14:00') AT TIME ZONE b.hotel_time_zone, b.lcd_at,
                 b.region_code, $11, $12, $13, $14, $15
            FROM bookings b WHERE b.id = $2
@@ -451,6 +465,17 @@ export async function seed(log: (line: string) => void = console.log) {
         }
       }
     }
+
+    // A case whose tickets are all closed is closed too.
+    await client.query(
+      `UPDATE cases c
+          SET status = 'closed',
+              closed_at = (SELECT max(closed_at) FROM tickets WHERE case_id = c.id)
+        WHERE c.status = 'open'
+          AND c.booking_id IN (SELECT id FROM bookings WHERE tboh LIKE 'TBOH1______')
+          AND EXISTS (SELECT 1 FROM tickets WHERE case_id = c.id)
+          AND NOT EXISTS (SELECT 1 FROM tickets WHERE case_id = c.id AND status <> 'closed')`,
+    );
 
     await client.query("COMMIT");
     log(

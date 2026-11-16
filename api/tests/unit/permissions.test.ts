@@ -17,6 +17,8 @@ const EXPECTED: Record<Action, Actor[]> = {
   "ticket:transition": everyone,
   "ticket:assign_self": staff,
   "ticket:assign_other": ["lead"],
+  "ticket:link": staff,
+  "case:read": everyone,
   "message:read": everyone,
   "message:write_public": everyone,
   "message:write_internal": staff,

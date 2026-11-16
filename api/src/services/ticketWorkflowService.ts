@@ -5,7 +5,8 @@ import { tx } from "../db/tx.js";
 import type { Intent, Principal, TicketStatus } from "../domain/enums.js";
 import { canTransition, isKnownTransition, transitionEffects } from "../domain/stateMachine.js";
 import type { UpdateTicketInput } from "../schemas/tickets.js";
-import { addEvent, addOutbox, findTicket, TICKET_COLUMNS, type Ticket } from "./ticketService.js";
+import { closeCaseIfFinished } from "./caseService.js";
+import { addEvent, addOutbox, findTicket, TICKET_COLUMNS, type Ticket } from "./shared.js";
 
 // Changes to an existing ticket: edit, status transition, assign.
 //
@@ -111,6 +112,11 @@ export async function changeStatus(
   );
   const after = result.rows[0];
   if (!after) throw versionConflict();
+
+  // Closing the last open ticket of a case closes the case too.
+  if (to === "closed") {
+    await closeCaseIfFinished(db, after.case_id);
+  }
 
   await addEvent(db, after, principal.userId, "status_changed", { from, to });
   await addOutbox(db, after.id, "ticket.status_changed", { ticket_id: after.id, from, to });

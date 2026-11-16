@@ -52,3 +52,6 @@ export const assignSchema = z.object({ assignee_id: z.string().uuid() }).strict(
 
 // PUT /tickets/:id/intent
 export const overrideIntentSchema = z.object({ intent: z.enum(INTENTS) }).strict();
+
+// POST /tickets/:id/links
+export const linkSchema = z.object({ ticket_id: z.string().uuid() }).strict();

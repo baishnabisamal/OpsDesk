@@ -19,6 +19,9 @@ const PERMISSIONS = {
   "ticket:assign_self": STAFF,
   // Only a lead may give a ticket to someone else or take it from someone.
   "ticket:assign_other": ["lead"],
+  // Linking and unlinking tickets that are about the same problem.
+  "ticket:link": STAFF,
+  "case:read": EVERYONE,
   "message:read": EVERYONE,
   "message:write_public": EVERYONE,
   "message:write_internal": STAFF,

@@ -28,10 +28,19 @@ let ticketA: string;
 let ticketB: string;
 
 async function insertTicket(agencyId: string, bookingId: string, requesterId: string) {
+  // Every ticket needs the open case of its booking.
+  await ownerPool.query(
+    `INSERT INTO cases (booking_id, agency_id)
+     SELECT id, agency_id FROM bookings WHERE id = $1
+     ON CONFLICT (booking_id) WHERE status = 'open' DO NOTHING`,
+    [bookingId],
+  );
   const result = await ownerPool.query<{ id: string }>(
-    `INSERT INTO tickets (agency_id, booking_id, requester_id, subject, body, intent_source,
-                          check_in_at, lcd_at, region_code)
-     VALUES ($1, $2, $3, 'Subject', 'Body', 'manual', now(), now(), 'EU') RETURNING id`,
+    `INSERT INTO tickets (agency_id, booking_id, case_id, requester_id, subject, body,
+                          intent_source, check_in_at, lcd_at, region_code)
+     VALUES ($1, $2, (SELECT id FROM cases WHERE booking_id = $2 AND status = 'open'),
+             $3, 'Subject', 'Body', 'manual', now(), now(), 'EU')
+     RETURNING id`,
     [agencyId, bookingId, requesterId],
   );
   return result.rows[0]!.id;
@@ -232,6 +241,9 @@ describe("append-only data and no deletes", () => {
     "outbox",
     "idempotency_keys",
     "refresh_tokens",
+    "cases",
+    "ticket_links",
+    "intent_overrides",
   ])("the app role cannot DELETE from %s", async (table) => {
     await asApp(asAgent(), async (db) => {
       await expectDbError(() => db.query(`DELETE FROM ${table}`), PERMISSION_DENIED);

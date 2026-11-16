@@ -59,6 +59,9 @@ const ROUTE_BODIES: Record<string, object | null> = {
   "POST /:id/messages": { body: "hello" },
   "GET /:id/messages": null,
   "GET /:id/timeline": null,
+  "GET /:id/links": null,
+  "POST /:id/links": { ticket_id: randomUUID() },
+  "DELETE /:id/links/:linkedId": null,
 };
 
 // Reads the real list of routes out of the Express router, so a route added
@@ -77,8 +80,8 @@ function routesWithTicketId(): string[] {
 
 function call(user: TestUser, routeKey: string, ticketId: string) {
   const [method, path] = routeKey.split(" ") as [string, string];
-  const url = `/api/v1/tickets${path.replace(":id", ticketId)}`;
-  const httpMethod = method.toLowerCase() as "get" | "post" | "patch" | "put";
+  const url = `/api/v1/tickets${path.replace(":id", ticketId).replace(":linkedId", randomUUID())}`;
+  const httpMethod = method.toLowerCase() as "get" | "post" | "patch" | "put" | "delete";
   const agent = request(app);
   const req = agent[httpMethod](url).set(bearer(user)).set("If-Match", '"1"');
   const body = ROUTE_BODIES[routeKey];
@@ -103,6 +106,19 @@ describe("tenant isolation sweep", () => {
       expect(JSON.stringify(hidden.body)).not.toContain("agency B");
     });
   }
+
+  it("GET /cases/:id: agency A gets 404 for agency B's case", async () => {
+    const ticket = await call(requesterB, "GET /:id", ticketOfB);
+    const caseId = ticket.body.case_id as string;
+
+    const hidden = await request(app).get(`/api/v1/cases/${caseId}`).set(bearer(requesterA));
+    const missing = await request(app).get(`/api/v1/cases/${randomUUID()}`).set(bearer(requesterA));
+    const owner = await request(app).get(`/api/v1/cases/${caseId}`).set(bearer(requesterB));
+
+    expect(hidden.status).toBe(404);
+    expect(hidden.body).toEqual({ ...missing.body, request_id: hidden.body.request_id });
+    expect(owner.status).toBe(200);
+  });
 
   it("the owner of the ticket and staff can still reach it", async () => {
     const owner = await call(requesterB, "GET /:id", ticketOfB);

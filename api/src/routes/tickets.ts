@@ -6,12 +6,14 @@ import {
   assignSchema,
   createTicketSchema,
   idempotencyKeySchema,
+  linkSchema,
   listTicketsSchema,
   overrideIntentSchema,
   transitionSchema,
   updateTicketSchema,
 } from "../schemas/tickets.js";
 import { createMessageSchema } from "../schemas/messages.js";
+import * as linkService from "../services/linkService.js";
 import * as messageService from "../services/messageService.js";
 import * as ticketService from "../services/ticketService.js";
 import * as workflowService from "../services/ticketWorkflowService.js";
@@ -135,4 +137,23 @@ ticketsRouter.put("/:id/intent", async (req, res) => {
   const ticket = await workflowService.overrideIntent(getPrincipal(res), id, version, body.intent);
   setETag(res, ticket.version);
   res.json(ticket);
+});
+
+ticketsRouter.get("/:id/links", async (req, res) => {
+  const items = await linkService.listLinks(getPrincipal(res), parseId(req.params.id));
+  res.json({ items });
+});
+
+ticketsRouter.post("/:id/links", async (req, res) => {
+  const id = parseId(req.params.id);
+  const body = linkSchema.parse(req.body);
+  await linkService.linkTickets(getPrincipal(res), id, body.ticket_id);
+  res.status(204).end();
+});
+
+ticketsRouter.delete("/:id/links/:linkedId", async (req, res) => {
+  const id = parseId(req.params.id);
+  const linkedId = parseId(req.params.linkedId);
+  await linkService.unlinkTickets(getPrincipal(res), id, linkedId);
+  res.status(204).end();
 });

@@ -2,7 +2,7 @@ import { requirePermission } from "../core/auth.js";
 import { conflict, notFound } from "../core/errors.js";
 import { tx } from "../db/tx.js";
 import type { Principal, Visibility } from "../domain/enums.js";
-import { addEvent, addOutbox, findTicket, TICKET_COLUMNS, type Ticket } from "./ticketService.js";
+import { addEvent, addOutbox, findTicket, TICKET_COLUMNS, type Ticket } from "./shared.js";
 import { changeStatus } from "./ticketWorkflowService.js";
 
 // Messages are what people wrote: public replies and internal notes.
