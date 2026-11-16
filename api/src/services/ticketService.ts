@@ -4,7 +4,10 @@ import { requirePermission } from "../core/auth.js";
 import { notFound, unprocessable } from "../core/errors.js";
 import { decodeCursor, encodeCursor } from "../core/pagination.js";
 import { tx } from "../db/tx.js";
+import * as ml from "../core/mlClient.js";
 import type { Intent, Principal, Priority, TicketStatus, Visibility } from "../domain/enums.js";
+import { classifyByRules, decideIntent, type IntentSource } from "../domain/intentRules.js";
+import { extractTboh } from "../domain/text.js";
 import type { CreateTicketInput, ListTicketsQuery } from "../schemas/tickets.js";
 
 // The shape of a ticket as the API returns it. It is the table row without
@@ -17,6 +20,10 @@ export type Ticket = {
   subject: string;
   body: string;
   intent: Intent;
+  intent_source: IntentSource;
+  intent_confidence: number | null;
+  model_version: string | null;
+  needs_review: boolean;
   priority: Priority;
   status: TicketStatus;
   assignee_id: string | null;
@@ -32,7 +39,7 @@ export type Ticket = {
 };
 
 export const TICKET_COLUMNS = `id, agency_id, booking_id, requester_id, subject, body, intent,
-  priority, status, assignee_id, team_id, check_in_at, lcd_at, region_code,
+  intent_source, intent_confidence, model_version, needs_review, priority, status, assignee_id, team_id, check_in_at, lcd_at, region_code,
   created_at, updated_at, resolved_at, closed_at, version`;
 
 // ---------------------------------------------------------------------------
@@ -98,6 +105,24 @@ export async function createTicket(
   // A fingerprint of the body, to tell a real retry from a reused key.
   const requestHash = createHash("sha256").update(JSON.stringify(input)).digest("hex");
 
+  // The booking reference: the tboh field, or one found in the text.
+  const tboh = input.tboh ?? extractTboh(`${input.subject} ${input.body}`);
+  if (!tboh) {
+    throw unprocessable(
+      "tboh_required",
+      "Send the booking reference in `tboh`, or mention it in the subject or body.",
+    );
+  }
+
+  // Work out the intent BEFORE the transaction opens (architecture rule 4:
+  // no external call inside a transaction). Cheap keyword rules go first; the
+  // ML service is asked only when no rule fires. ml.classify never throws and
+  // never takes longer than its timeout: if the service is down it returns
+  // null and the ticket is created as 'other', flagged for review.
+  const rule = classifyByRules(input.subject, input.body);
+  const prediction = rule ? null : await ml.classify(ml.joinText(input.subject, input.body));
+  const decision = decideIntent(rule, prediction);
+
   return tx(principal, async (db) => {
     // Hazard 1: claim the key. The primary key (user_id, key) lets only one
     // transaction insert it. A retry arriving at the same moment WAITS on
@@ -129,7 +154,7 @@ export async function createTicket(
     // requester can only find bookings of their own agency.
     const bookingResult = await db.query<{ id: string }>(
       "SELECT id FROM bookings WHERE tboh = $1",
-      [input.tboh],
+      [tboh],
     );
     const booking = bookingResult.rows[0];
     if (!booking) {
@@ -140,21 +165,35 @@ export async function createTicket(
     // Travel fields are copied from the booking in SQL. The check-in date
     // becomes an instant using the hotel's time zone and a 14:00 check-in time.
     const inserted = await db.query<Ticket>(
-      `INSERT INTO tickets (agency_id, booking_id, requester_id, subject, body, intent, priority,
+      `INSERT INTO tickets (agency_id, booking_id, requester_id, subject, body, priority,
+                            intent, intent_source, intent_confidence, model_version, needs_review,
                             check_in_at, lcd_at, region_code)
-       SELECT b.agency_id, b.id, $2, $3, $4, $5, $6,
+       SELECT b.agency_id, b.id, $2, $3, $4, $5,
+              $6, $7, $8, $9, $10,
               (b.check_in_date + time '14:00') AT TIME ZONE b.hotel_time_zone,
               b.lcd_at, b.region_code
          FROM bookings b
         WHERE b.id = $1
        RETURNING ${TICKET_COLUMNS}`,
-      [booking.id, principal.userId, input.subject, input.body, input.intent, input.priority],
+      [
+        booking.id,
+        principal.userId,
+        input.subject,
+        input.body,
+        input.priority,
+        decision.intent,
+        decision.source,
+        decision.confidence,
+        decision.modelVersion,
+        decision.needsReview,
+      ],
     );
     const ticket = inserted.rows[0]!;
 
     await addEvent(db, ticket, principal.userId, "ticket_created", {
       priority: ticket.priority,
       intent: ticket.intent,
+      intent_source: ticket.intent_source,
     });
     await addOutbox(db, ticket.id, "ticket.created", { ticket_id: ticket.id });
 
@@ -203,6 +242,10 @@ export async function listTickets(
   if (query.status) conditions.push(`status = ${addParam(query.status)}`);
   if (query.priority) conditions.push(`priority = ${addParam(query.priority)}`);
   if (query.assignee_id) conditions.push(`assignee_id = ${addParam(query.assignee_id)}`);
+  if (query.intent) conditions.push(`intent = ${addParam(query.intent)}`);
+  if (query.needs_review) {
+    conditions.push(`needs_review = ${addParam(query.needs_review === "true")}`);
+  }
   if (query.q) {
     // websearch_to_tsquery understands plain words, "quoted phrases" and -minus.
     conditions.push(`search_vector @@ websearch_to_tsquery('english', ${addParam(query.q)})`);

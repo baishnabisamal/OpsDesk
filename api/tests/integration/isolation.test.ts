@@ -55,6 +55,7 @@ const ROUTE_BODIES: Record<string, object | null> = {
   "PATCH /:id": { priority: "high" },
   "POST /:id/transitions": { to: "closed" },
   "POST /:id/assign": { assignee_id: randomUUID() },
+  "PUT /:id/intent": { intent: "refund" },
   "POST /:id/messages": { body: "hello" },
   "GET /:id/messages": null,
   "GET /:id/timeline": null,
@@ -77,7 +78,7 @@ function routesWithTicketId(): string[] {
 function call(user: TestUser, routeKey: string, ticketId: string) {
   const [method, path] = routeKey.split(" ") as [string, string];
   const url = `/api/v1/tickets${path.replace(":id", ticketId)}`;
-  const httpMethod = method.toLowerCase() as "get" | "post" | "patch";
+  const httpMethod = method.toLowerCase() as "get" | "post" | "patch" | "put";
   const agent = request(app);
   const req = agent[httpMethod](url).set(bearer(user)).set("If-Match", '"1"');
   const body = ROUTE_BODIES[routeKey];

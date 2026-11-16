@@ -60,3 +60,57 @@ export function classifyByRules(subject: string, body: string): RuleMatch | null
   }
   return null;
 }
+
+// ---------------------------------------------------------------------------
+// Putting rule and model together
+// ---------------------------------------------------------------------------
+
+export type IntentSource = "rule" | "model" | "manual" | "fallback";
+
+export type IntentDecision = {
+  intent: Intent;
+  source: IntentSource;
+  confidence: number | null; // only when the model decided
+  modelVersion: string | null; // only when the model decided
+  needsReview: boolean; // true = a person should check this intent
+};
+
+// Below this probability the model's answer is kept but flagged for review.
+export const MIN_MODEL_CONFIDENCE = 0.6;
+
+type ModelPrediction = { intent: Intent; confidence: number; model_version: string };
+
+// Decides the intent of a new ticket, in order of trust:
+//   1. a keyword rule fired            -> use it
+//   2. the model answered              -> use it, flag it when it is unsure
+//   3. neither (ML down, slow, absent) -> 'other', flagged for review
+export function decideIntent(
+  rule: RuleMatch | null,
+  prediction: ModelPrediction | null,
+): IntentDecision {
+  if (rule) {
+    return {
+      intent: rule.intent,
+      source: "rule",
+      confidence: null,
+      modelVersion: null,
+      needsReview: false,
+    };
+  }
+  if (prediction) {
+    return {
+      intent: prediction.intent,
+      source: "model",
+      confidence: prediction.confidence,
+      modelVersion: prediction.model_version,
+      needsReview: prediction.confidence < MIN_MODEL_CONFIDENCE,
+    };
+  }
+  return {
+    intent: "other",
+    source: "fallback",
+    confidence: null,
+    modelVersion: null,
+    needsReview: true,
+  };
+}

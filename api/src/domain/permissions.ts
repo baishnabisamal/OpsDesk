@@ -11,6 +11,8 @@ const PERMISSIONS = {
   "ticket:create": ["requester"],
   "ticket:read": EVERYONE,
   "ticket:edit": STAFF,
+  // Correcting or confirming the intent the rules or the model chose.
+  "ticket:override_intent": STAFF,
   // The state machine then decides which transitions each role may make.
   "ticket:transition": EVERYONE,
   // Any staff member may take an unassigned ticket for themselves.

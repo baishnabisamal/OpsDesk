@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { classifyByRules } from "../../src/domain/intentRules.js";
+import {
+  classifyByRules,
+  decideIntent,
+  MIN_MODEL_CONFIDENCE,
+} from "../../src/domain/intentRules.js";
 
 describe("intent rules", () => {
   it.each([
@@ -48,5 +52,55 @@ describe("intent rules", () => {
   it("does not match a word that only contains a keyword", () => {
     // "cancel" must be a whole word: "cancellous" is not a cancellation.
     expect(classifyByRules("Cancellous bone query", "Not about travel.")).toBeNull();
+  });
+});
+
+describe("decideIntent", () => {
+  const prediction = {
+    intent: "payment" as const,
+    confidence: 0.91,
+    model_version: "tfidf-lr-test",
+  };
+
+  it("a rule wins, even when a prediction exists", () => {
+    const decision = decideIntent({ intent: "refund", rule: "refund_words" }, prediction);
+    expect(decision).toEqual({
+      intent: "refund",
+      source: "rule",
+      confidence: null,
+      modelVersion: null,
+      needsReview: false,
+    });
+  });
+
+  it("with no rule, a confident model decides", () => {
+    expect(decideIntent(null, prediction)).toEqual({
+      intent: "payment",
+      source: "model",
+      confidence: 0.91,
+      modelVersion: "tfidf-lr-test",
+      needsReview: false,
+    });
+  });
+
+  it("an unsure model still decides, but the ticket is flagged", () => {
+    const decision = decideIntent(null, { ...prediction, confidence: MIN_MODEL_CONFIDENCE - 0.01 });
+    expect(decision.intent).toBe("payment");
+    expect(decision.needsReview).toBe(true);
+  });
+
+  it("exactly at the threshold is confident enough", () => {
+    const decision = decideIntent(null, { ...prediction, confidence: MIN_MODEL_CONFIDENCE });
+    expect(decision.needsReview).toBe(false);
+  });
+
+  it("with neither rule nor model, falls back to other and flags it", () => {
+    expect(decideIntent(null, null)).toEqual({
+      intent: "other",
+      source: "fallback",
+      confidence: null,
+      modelVersion: null,
+      needsReview: true,
+    });
   });
 });

@@ -89,10 +89,17 @@ async function eventTypes(ticketId: string): Promise<string[]> {
 describe("PATCH /tickets/:id", () => {
   it("edits fields and moves the version forward", async () => {
     const ticket = await newTicket();
-    const res = await patch(agent, ticket.id, 1, { priority: "high", intent: "voucher" });
+    const res = await patch(agent, ticket.id, 1, {
+      priority: "high",
+      subject: "Voucher dates are wrong",
+    });
 
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ priority: "high", intent: "voucher", version: 2 });
+    expect(res.body).toMatchObject({
+      priority: "high",
+      subject: "Voucher dates are wrong",
+      version: 2,
+    });
     expect(res.headers.etag).toBe('"2"');
   });
 
@@ -146,6 +153,7 @@ describe("PATCH /tickets/:id", () => {
   it("rejects status, assignee and empty bodies", async () => {
     const ticket = await newTicket();
     expect((await patch(agent, ticket.id, 1, { status: "closed" })).status).toBe(400);
+    expect((await patch(agent, ticket.id, 1, { intent: "refund" })).status).toBe(400);
     expect((await patch(agent, ticket.id, 1, { assignee_id: agent.id })).status).toBe(400);
     expect((await patch(agent, ticket.id, 1, {})).status).toBe(400);
   });

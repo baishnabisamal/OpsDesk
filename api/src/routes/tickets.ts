@@ -7,6 +7,7 @@ import {
   createTicketSchema,
   idempotencyKeySchema,
   listTicketsSchema,
+  overrideIntentSchema,
   transitionSchema,
   updateTicketSchema,
 } from "../schemas/tickets.js";
@@ -124,4 +125,14 @@ ticketsRouter.get("/:id/messages", async (req, res) => {
 ticketsRouter.get("/:id/timeline", async (req, res) => {
   const items = await messageService.listTimeline(getPrincipal(res), parseId(req.params.id));
   res.json({ items });
+});
+
+ticketsRouter.put("/:id/intent", async (req, res) => {
+  const id = parseId(req.params.id);
+  const version = parseIfMatch(req);
+  const body = overrideIntentSchema.parse(req.body);
+
+  const ticket = await workflowService.overrideIntent(getPrincipal(res), id, version, body.intent);
+  setETag(res, ticket.version);
+  res.json(ticket);
 });

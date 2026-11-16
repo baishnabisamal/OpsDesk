@@ -64,7 +64,9 @@ describe("POST /tickets", () => {
       requester_id: requester.id,
       status: "new",
       priority: "normal",
-      intent: "other",
+      intent: "booking_not_found", // a keyword rule fired on "Booking missing"
+      intent_source: "rule",
+      needs_review: false,
       assignee_id: null,
       region_code: "EU",
       version: 1,

@@ -13,6 +13,7 @@ const EXPECTED: Record<Action, Actor[]> = {
   "ticket:create": ["requester"],
   "ticket:read": everyone,
   "ticket:edit": staff,
+  "ticket:override_intent": staff,
   "ticket:transition": everyone,
   "ticket:assign_self": staff,
   "ticket:assign_other": ["lead"],

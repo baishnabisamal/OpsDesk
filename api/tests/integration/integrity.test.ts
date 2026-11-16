@@ -29,9 +29,9 @@ let ticketB: string;
 
 async function insertTicket(agencyId: string, bookingId: string, requesterId: string) {
   const result = await ownerPool.query<{ id: string }>(
-    `INSERT INTO tickets (agency_id, booking_id, requester_id, subject, body,
+    `INSERT INTO tickets (agency_id, booking_id, requester_id, subject, body, intent_source,
                           check_in_at, lcd_at, region_code)
-     VALUES ($1, $2, $3, 'Subject', 'Body', now(), now(), 'EU') RETURNING id`,
+     VALUES ($1, $2, $3, 'Subject', 'Body', 'manual', now(), now(), 'EU') RETURNING id`,
     [agencyId, bookingId, requesterId],
   );
   return result.rows[0]!.id;

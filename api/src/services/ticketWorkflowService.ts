@@ -2,7 +2,7 @@ import type { PoolClient } from "pg";
 import { requirePermission } from "../core/auth.js";
 import { conflict, forbidden, unprocessable } from "../core/errors.js";
 import { tx } from "../db/tx.js";
-import type { Principal, TicketStatus } from "../domain/enums.js";
+import type { Intent, Principal, TicketStatus } from "../domain/enums.js";
 import { canTransition, isKnownTransition, transitionEffects } from "../domain/stateMachine.js";
 import type { UpdateTicketInput } from "../schemas/tickets.js";
 import { addEvent, addOutbox, findTicket, TICKET_COLUMNS, type Ticket } from "./ticketService.js";
@@ -48,25 +48,18 @@ export async function updateTicket(
       `UPDATE tickets
           SET subject = COALESCE($3, subject),
               priority = COALESCE($4, priority),
-              intent = COALESCE($5, intent),
               version = version + 1,
               updated_at = now()
         WHERE id = $1 AND version = $2
         RETURNING ${TICKET_COLUMNS}`,
-      [
-        ticketId,
-        expectedVersion,
-        input.subject ?? null,
-        input.priority ?? null,
-        input.intent ?? null,
-      ],
+      [ticketId, expectedVersion, input.subject ?? null, input.priority ?? null],
     );
     const after = result.rows[0];
     if (!after) throw versionConflict();
 
     // Record what changed, old value and new value, for the timeline.
     const changes: Record<string, { from: string; to: string }> = {};
-    for (const field of ["subject", "priority", "intent"] as const) {
+    for (const field of ["subject", "priority"] as const) {
       if (before[field] !== after[field]) {
         changes[field] = { from: before[field], to: after[field] };
       }
@@ -211,6 +204,71 @@ export async function assignTicket(
     await addOutbox(db, after.id, "ticket.assigned", {
       ticket_id: after.id,
       assignee_id: assigneeId,
+    });
+    return after;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Override the intent
+// ---------------------------------------------------------------------------
+
+// A person corrects (or confirms) the intent that a rule or the model chose.
+// Every override is stored in intent_overrides with what it replaced. Those
+// rows are the labels a future model is trained on: the human in the loop.
+export async function overrideIntent(
+  principal: Principal,
+  ticketId: string,
+  expectedVersion: number,
+  intent: Intent,
+): Promise<Ticket> {
+  return tx(principal, async (db) => {
+    const before = await findTicket(db, ticketId);
+    requirePermission(principal, "ticket:override_intent");
+    if (before.version !== expectedVersion) throw versionConflict();
+
+    // A person has now decided, so the source becomes 'manual', the model's
+    // confidence and version are cleared, and the review flag is dropped.
+    const result = await db.query<Ticket>(
+      `UPDATE tickets
+          SET intent = $3,
+              intent_source = 'manual',
+              intent_confidence = NULL,
+              model_version = NULL,
+              needs_review = false,
+              version = version + 1,
+              updated_at = now()
+        WHERE id = $1 AND version = $2
+        RETURNING ${TICKET_COLUMNS}`,
+      [ticketId, expectedVersion, intent],
+    );
+    const after = result.rows[0];
+    if (!after) throw versionConflict();
+
+    await db.query(
+      `INSERT INTO intent_overrides
+         (ticket_id, agency_id, from_intent, to_intent, from_source, model_version, overridden_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        after.id,
+        after.agency_id,
+        before.intent,
+        intent,
+        before.intent_source,
+        before.model_version,
+        principal.userId,
+      ],
+    );
+
+    await addEvent(db, after, principal.userId, "intent_overridden", {
+      from: before.intent,
+      to: intent,
+      from_source: before.intent_source,
+    });
+    await addOutbox(db, after.id, "ticket.intent_overridden", {
+      ticket_id: after.id,
+      from: before.intent,
+      to: intent,
     });
     return after;
   });

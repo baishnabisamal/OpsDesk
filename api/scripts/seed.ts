@@ -355,10 +355,10 @@ export async function seed(log: (line: string) => void = console.log) {
       const lastChange = status === "new" ? createdAt : status === "open" ? assignedAt : finishedAt;
 
       await client.query(
-        `INSERT INTO tickets (id, agency_id, booking_id, requester_id, subject, body, intent, priority,
-                              status, assignee_id, team_id, check_in_at, lcd_at, region_code,
+        `INSERT INTO tickets (id, agency_id, booking_id, requester_id, subject, body, intent, intent_source,
+                              priority, status, assignee_id, team_id, check_in_at, lcd_at, region_code,
                               created_at, updated_at, resolved_at, closed_at, version)
-         SELECT $1, b.agency_id, b.id, $3, $4, $5, $6, $7, $8, $9, $10,
+         SELECT $1, b.agency_id, b.id, $3, $4, $5, $6, 'manual', $7, $8, $9, $10,
                 (b.check_in_date + time '14:00') AT TIME ZONE b.hotel_time_zone, b.lcd_at,
                 b.region_code, $11, $12, $13, $14, $15
            FROM bookings b WHERE b.id = $2
