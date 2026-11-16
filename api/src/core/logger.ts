@@ -17,7 +17,9 @@ export function requestLogger(req: Request, res: Response, next: NextFunction) {
     logger.info({
       requestId,
       method: req.method,
-      path: req.path,
+      // originalUrl is the full path; the query string is cut off because it
+      // can contain search text.
+      path: req.originalUrl.split("?")[0],
       status: res.statusCode,
       durationMs: Date.now() - startedAt,
     });

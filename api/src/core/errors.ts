@@ -93,7 +93,7 @@ export function errorHandler(err: unknown, req: Request, res: Response, _next: N
 
   if (appError.status >= 500) {
     // Log the real error, but never send its details to the client.
-    logger.error({ err, requestId, path: req.path }, "unhandled error");
+    logger.error({ err, requestId, path: req.originalUrl.split("?")[0] }, "unhandled error");
   }
 
   res
