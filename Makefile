@@ -1,6 +1,6 @@
 COMPOSE = docker compose --env-file .env -f infra/docker-compose.yml
 
-.PHONY: help setup up down reset ps logs test lint format
+.PHONY: help setup up down reset ps logs migrate seed dev test lint format
 
 help: ## List the available commands
 	@grep -E '^[a-z]+:.*## ' $(MAKEFILE_LIST) | awk -F ':.*## ' '{printf "  make %-8s %s\n", $$1, $$2}'
@@ -23,6 +23,15 @@ ps: ## Show container status
 
 logs: ## Follow container logs
 	$(COMPOSE) logs -f
+
+migrate: ## Apply new SQL migrations (as the owner role)
+	npm run migrate
+
+seed: ## Load the demo data (same data every time)
+	npm run seed
+
+dev: ## Start the API and restart it when files change
+	npm run dev
 
 test: ## Run the test suite
 	npm test
