@@ -2,7 +2,7 @@ import { Router, type Response } from "express";
 import { z } from "zod";
 import { authenticate, getPrincipal } from "../core/auth.js";
 import { badRequest, notFound } from "../core/errors.js";
-import { createTicketSchema, idempotencyKeySchema } from "../schemas/tickets.js";
+import { createTicketSchema, idempotencyKeySchema, listTicketsSchema } from "../schemas/tickets.js";
 import * as ticketService from "../services/ticketService.js";
 
 export const ticketsRouter = Router();
@@ -34,6 +34,12 @@ ticketsRouter.post("/", async (req, res) => {
   if (result.replayed) res.setHeader("Idempotent-Replayed", "true");
   setETag(res, result.ticket.version);
   res.status(201).location(`/api/v1/tickets/${result.ticket.id}`).json(result.ticket);
+});
+
+ticketsRouter.get("/", async (req, res) => {
+  const query = listTicketsSchema.parse(req.query);
+  const page = await ticketService.listTickets(getPrincipal(res), query);
+  res.json(page);
 });
 
 ticketsRouter.get("/:id", async (req, res) => {

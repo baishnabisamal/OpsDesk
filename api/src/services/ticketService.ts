@@ -2,9 +2,10 @@ import { createHash } from "node:crypto";
 import type { PoolClient } from "pg";
 import { requirePermission } from "../core/auth.js";
 import { notFound, unprocessable } from "../core/errors.js";
+import { decodeCursor, encodeCursor } from "../core/pagination.js";
 import { tx } from "../db/tx.js";
 import type { Intent, Principal, Priority, TicketStatus, Visibility } from "../domain/enums.js";
-import type { CreateTicketInput } from "../schemas/tickets.js";
+import type { CreateTicketInput, ListTicketsQuery } from "../schemas/tickets.js";
 
 // The shape of a ticket as the API returns it. It is the table row without
 // search_vector, which is only for the database.
@@ -175,4 +176,77 @@ export async function createTicket(
 export async function getTicket(principal: Principal, ticketId: string): Promise<Ticket> {
   requirePermission(principal, "ticket:read");
   return tx(principal, (db) => findTicket(db, ticketId));
+}
+
+// ---------------------------------------------------------------------------
+// List
+// ---------------------------------------------------------------------------
+
+export type TicketPage = { items: Ticket[]; next_cursor: string | null };
+
+export async function listTickets(
+  principal: Principal,
+  query: ListTicketsQuery,
+): Promise<TicketPage> {
+  requirePermission(principal, "ticket:read");
+
+  // Build the WHERE clause from the filters that were actually sent. Values
+  // always go in `params` and are referred to as $1, $2...; nothing the
+  // client sends is ever pasted into the SQL text.
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+  const addParam = (value: unknown) => {
+    params.push(value);
+    return `$${params.length}`;
+  };
+
+  if (query.status) conditions.push(`status = ${addParam(query.status)}`);
+  if (query.priority) conditions.push(`priority = ${addParam(query.priority)}`);
+  if (query.assignee_id) conditions.push(`assignee_id = ${addParam(query.assignee_id)}`);
+  if (query.q) {
+    // websearch_to_tsquery understands plain words, "quoted phrases" and -minus.
+    conditions.push(`search_vector @@ websearch_to_tsquery('english', ${addParam(query.q)})`);
+  }
+  if (query.cursor) {
+    // Keyset: continue strictly after the last row of the previous page.
+    // Comparing the pair (created_at, id) matches the ORDER BY below, and id
+    // breaks ties between tickets created in the same instant.
+    const cursor = decodeCursor(query.cursor);
+    conditions.push(
+      `(created_at, id) < (${addParam(cursor.createdAt)}::timestamptz, ${addParam(cursor.id)}::uuid)`,
+    );
+  }
+
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  // Ask for one row more than the page size: if it comes back, there is a next page.
+  const limit = addParam(query.limit + 1);
+
+  // There is no agency filter here on purpose: Row-Level Security adds it for
+  // requesters, and staff see every agency.
+  const rows = await tx(principal, async (db) => {
+    const result = await db.query<Ticket & { cursor_created_at: string }>(
+      `SELECT ${TICKET_COLUMNS}, created_at::text AS cursor_created_at
+         FROM tickets
+         ${where}
+        ORDER BY created_at DESC, id DESC
+        LIMIT ${limit}`,
+      params,
+    );
+    return result.rows;
+  });
+
+  const hasMore = rows.length > query.limit;
+  const page = hasMore ? rows.slice(0, query.limit) : rows;
+  const last = page[page.length - 1];
+  const nextCursor =
+    hasMore && last ? encodeCursor({ createdAt: last.cursor_created_at, id: last.id }) : null;
+
+  // Drop the helper column before the rows leave the service.
+  const items = page.map((row) => {
+    const ticket: Ticket & { cursor_created_at?: string } = { ...row };
+    delete ticket.cursor_created_at;
+    return ticket;
+  });
+
+  return { items, next_cursor: nextCursor };
 }
