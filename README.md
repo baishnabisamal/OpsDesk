@@ -4,7 +4,7 @@ A travel-aware operations ticketing system. Travel agencies raise tickets about 
 
 **Stack:** PostgreSQL, Express, React, Node (PERN), with Redis for queues and a small Python service for machine learning.
 
-**Status:** Phase 0, design. This document is the plan; no application code exists yet. Every number below is a target or an estimate until a later phase replaces it with a measurement.
+**Status:** Phase 1 (foundation and ticket core) is built and its gate tests pass. Phases 2 to 6 are still design only. Every number below is a target or an estimate until a later phase replaces it with a measurement.
 
 ## Contents
 
