@@ -18,6 +18,8 @@ export type StaffMember = {
   is_online: boolean;
   open_count: number;
   max_open: number | null;
+  // Invited but has not chosen a password yet (migration 015).
+  invite_pending: boolean;
 };
 
 export async function listStaff(principal: Principal): Promise<StaffMember[]> {
@@ -28,7 +30,8 @@ export async function listStaff(principal: Principal): Promise<StaffMember[]> {
               t.name AS team_name, t.region_code,
               COALESCE(p.is_online, false) AS is_online,
               COALESCE(p.open_count, 0) AS open_count,
-              p.max_open
+              p.max_open,
+              u.email_verified_at IS NULL AS invite_pending
          FROM users u
          LEFT JOIN teams t ON t.id = u.team_id
          LEFT JOIN agent_presence p ON p.user_id = u.id

@@ -269,27 +269,38 @@ export async function inviteStaff(
     const team = await db.query("SELECT 1 FROM teams WHERE id = $1", [input.team_id]);
     if (!team.rowCount) throw unprocessable("invalid_team", "No such team.");
 
-    // The lead is staff, so telling them an address is taken reveals nothing.
-    if (await findByEmail(db, input.email)) {
+    const existing = await findByEmail(db, input.email);
+    // Invited before but never accepted (staff, not verified): send a fresh
+    // link instead, so a lost email is not a dead end. The account keeps the
+    // role and team of the first invitation.
+    const pending =
+      existing && existing.agency_id === null && existing.email_verified_at === null
+        ? existing
+        : null;
+    // Otherwise the address is taken. The lead is staff, so saying so reveals nothing.
+    if (existing && !pending) {
       throw conflict("email_taken", "Someone with this email address already has an account.");
     }
 
     // Creating users is the system's work (RLS); the permission check above
     // is what makes it allowed here.
     return asSystem(db, principal, async () => {
-      const user = await db.query<{ id: string }>(
-        `INSERT INTO users (email, password_hash, full_name, role, team_id)
-         VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-        [input.email, placeholderHash, input.full_name, input.role, input.team_id],
-      );
-      const id = user.rows[0]!.id;
+      let account = pending;
+      if (!account) {
+        const user = await db.query<AccountRow>(
+          `INSERT INTO users (email, password_hash, full_name, role, team_id)
+           VALUES ($1, $2, $3, $4, $5) RETURNING ${ACCOUNT_COLUMNS}`,
+          [input.email, placeholderHash, input.full_name, input.role, input.team_id],
+        );
+        account = user.rows[0]!;
+      }
       const inviter = await db.query<{ full_name: string }>(
         "SELECT full_name FROM users WHERE id = $1",
         [principal.userId],
       );
       return {
-        id,
-        token: await issueToken(db, id, "invite"),
+        account,
+        token: await issueToken(db, account.id, "invite"),
         invitedBy: inviter.rows[0]?.full_name ?? "Your team lead",
       };
     });
@@ -302,20 +313,21 @@ export async function inviteStaff(
   });
 
   // Here the lead waits for the email, so they can be told if it failed.
+  const { account } = created;
   const sent = await sendAccountMail({
     kind: "invite",
-    to: input.email,
-    name: input.full_name,
+    to: account.email,
+    name: account.full_name,
     token: created.token,
     invitedBy: created.invitedBy,
   });
 
   return {
-    id: created.id,
-    email: input.email,
-    full_name: input.full_name,
-    role: input.role,
-    team_id: input.team_id,
+    id: account.id,
+    email: account.email,
+    full_name: account.full_name,
+    role: account.role,
+    team_id: account.team_id!,
     email_sent: sent,
   };
 }

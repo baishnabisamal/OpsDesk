@@ -303,6 +303,34 @@ describe("staff invitations", () => {
     expect((await login(email)).status).toBe(200);
   });
 
+  it("inviting a person who has not accepted yet sends a fresh link; the old one stops working", async () => {
+    const teamId = await createTeam("EU");
+    const lead = await createUser("lead", { teamId });
+    const email = `pending.${unique()}@opsdesk.example`;
+    const body = { email, full_name: "Ravi Nair", role: "agent", team_id: teamId };
+
+    expect(
+      (await request(app).post("/api/v1/staff/invites").set(bearer(lead)).send(body)).status,
+    ).toBe(201);
+    const first = await tokenFrom(email, 1);
+    const again = await request(app).post("/api/v1/staff/invites").set(bearer(lead)).send(body);
+    expect(again.status).toBe(201);
+    const second = await tokenFrom(email, 2);
+
+    const old = await request(app)
+      .post("/api/v1/auth/invites/accept")
+      .send({ token: first, password: PASSWORD });
+    expect(old.status).toBe(400);
+    const ok = await request(app)
+      .post("/api/v1/auth/invites/accept")
+      .send({ token: second, password: PASSWORD });
+    expect(ok.status).toBe(200);
+
+    // Accepted now, so a third invitation is refused.
+    const third = await request(app).post("/api/v1/staff/invites").set(bearer(lead)).send(body);
+    expect(third.status).toBe(409);
+  });
+
   it("only leads may invite", async () => {
     const teamId = await createTeam("EU");
     for (const role of ["agent", "escalation_manager"] as const) {

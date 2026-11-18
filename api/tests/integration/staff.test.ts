@@ -39,6 +39,7 @@ describe("GET /staff", () => {
       is_online: false,
       open_count: 0,
       max_open: 7,
+      invite_pending: false,
     });
     // A lead with no presence row still appears, as offline.
     const leadRow = res.body.items.find((member: { id: string }) => member.id === lead.id);
