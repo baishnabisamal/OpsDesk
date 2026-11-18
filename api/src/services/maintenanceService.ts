@@ -48,11 +48,11 @@ export async function autoCloseResolved(limit = 500): Promise<{ closed: number }
 }
 
 // Makes sure the monthly partitions for the next three months exist
-// (hazard 15). The work is done by a database function; see migration 007
-// for why the app role cannot simply run CREATE TABLE, and why the function
-// never waits for a lock.
+// (hazard 15). The work is done by a database function; see migrations 007
+// and 012 for why the app role cannot simply run CREATE TABLE, and why the
+// function waits at most 200 ms for each lock.
 //
-// When the function cannot get its locks straight away (a request is using
+// When the function cannot get its locks in time (requests keep writing to
 // the table), it fails with error 55P03 "lock not available". This loop then
 // waits a moment and tries again, in a new transaction. The partitions are
 // needed months from now, so giving up for today is fine too: the job runs
