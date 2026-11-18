@@ -1,10 +1,12 @@
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import { GenericContainer, type StartedTestContainer } from "testcontainers";
 
-// Runs once before the integration tests. It starts a fresh PostgreSQL in
-// Docker (Testcontainers), points the app's settings at it, and applies the
+// Runs once before the integration tests. It starts a fresh PostgreSQL and a
+// fresh Redis in Docker (Testcontainers), points the app's settings at it, and applies the
 // migrations. The tests therefore never touch the development database.
 
 let container: StartedPostgreSqlContainer;
+let redis: StartedTestContainer;
 
 export async function setup() {
   // Ryuk is Testcontainers' helper container that removes leftovers after a
@@ -29,6 +31,11 @@ export async function setup() {
   process.env.APP_DB_USER = "opsdesk_app";
   process.env.APP_DB_PASSWORD = "app-test-password";
   process.env.JWT_SECRET = "test-secret-test-secret-test-secret-123";
+
+  // A throwaway Redis for the job queue tests.
+  redis = await new GenericContainer("redis:7-alpine").withExposedPorts(6379).start();
+  process.env.REDIS_HOST = redis.getHost();
+  process.env.REDIS_PORT = String(redis.getMappedPort(6379));
   // No ML service runs during tests. Nothing listens on this port, so most
   // test files exercise the "ML is down" path. Files that need a working
   // model start their own fake ML server (fakeMl.ts).
@@ -43,4 +50,5 @@ export async function setup() {
 
 export async function teardown() {
   await container.stop();
+  await redis.stop();
 }

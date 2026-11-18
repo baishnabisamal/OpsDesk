@@ -26,6 +26,13 @@ const envSchema = z.object({
   ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(900),
   REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(30),
 
+  // Redis holds the job queue of the worker process (nothing durable).
+  REDIS_HOST: z.string().min(1).default("localhost"),
+  REDIS_PORT: z.coerce.number().int().default(6379),
+
+  // A resolved ticket is closed automatically after this many quiet hours.
+  AUTO_CLOSE_AFTER_HOURS: z.coerce.number().int().positive().default(72),
+
   // The Python ML service. Ticket create never waits longer than the timeout.
   ML_URL: z.string().url().default("http://127.0.0.1:8001"),
   ML_SHARED_SECRET: z.string().min(16, "must be at least 16 characters"),
@@ -58,6 +65,8 @@ export function loadConfig(env: Record<string, string | undefined>) {
     jwtSecret: e.JWT_SECRET,
     accessTokenTtlSeconds: e.ACCESS_TOKEN_TTL_SECONDS,
     refreshTokenTtlDays: e.REFRESH_TOKEN_TTL_DAYS,
+    redis: { host: e.REDIS_HOST, port: e.REDIS_PORT },
+    autoCloseAfterHours: e.AUTO_CLOSE_AFTER_HOURS,
     ml: {
       url: e.ML_URL.replace(/\/$/, ""), // no trailing slash
       sharedSecret: e.ML_SHARED_SECRET,

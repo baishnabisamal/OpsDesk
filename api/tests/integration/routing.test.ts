@@ -50,8 +50,8 @@ beforeEach(async () => {
     [REGION],
   );
   await ownerPool.query(
-    `UPDATE tickets SET status = 'resolved', resolved_at = now()
-      WHERE region_code = $1 AND assignee_id IS NULL AND status = 'new'`,
+    `UPDATE tickets SET status = 'resolved', resolved_at = now(), sla_paused_at = NULL
+      WHERE region_code = $1 AND assignee_id IS NULL AND status IN ('new', 'open')`,
     [REGION],
   );
 });
