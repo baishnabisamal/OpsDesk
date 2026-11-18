@@ -316,6 +316,12 @@ const PATHS: Record<string, Record<string, Operation>> = {
       responses: responses({ "200": json("A page", page) }),
     },
   },
+  "/api/v1/staff": {
+    get: {
+      summary: "Staff directory with team and load (staff)",
+      responses: responses({ "200": json("Staff", items()) }),
+    },
+  },
   "/api/v1/insights/themes": {
     get: {
       summary: "Weekly themes (leads)",

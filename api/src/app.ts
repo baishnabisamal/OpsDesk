@@ -14,6 +14,7 @@ import { insightsRouter } from "./routes/insights.js";
 import { meRouter } from "./routes/me.js";
 import { queuesRouter } from "./routes/queues.js";
 import { sideConversationsRouter } from "./routes/sideConversations.js";
+import { staffRouter } from "./routes/staff.js";
 import { ticketsRouter } from "./routes/tickets.js";
 
 // One Redis connection for the rate limiter, shared by every app built in
@@ -51,6 +52,7 @@ export function createApp() {
   app.use("/api/v1/cases", casesRouter);
   app.use("/api/v1/me", meRouter);
   app.use("/api/v1/queues", queuesRouter);
+  app.use("/api/v1/staff", staffRouter);
   app.use("/api/v1/side-conversations", sideConversationsRouter);
   app.use("/api/v1/insights", insightsRouter);
   app.use("/api/v1/exports", exportsRouter);
