@@ -4,7 +4,8 @@
   "private": true,
   "description": "Travel-aware operations ticketing system (PERN)",
   "workspaces": [
-    "api"
+    "api",
+    "web"
   ],
   "engines": {
     "node": ">=22"
@@ -15,9 +16,10 @@
     "realtime": "npm run realtime --workspace api",
     "migrate": "npm run migrate --workspace api",
     "seed": "npm run seed --workspace api",
-    "test": "npm test --workspace api",
-    "lint": "npm run lint --workspace api && prettier --check .",
-    "format": "prettier --write ."
+    "test": "npm test --workspace api && npm test --workspace web",
+    "lint": "npm run lint --workspace api && npm run lint --workspace web && prettier --check .",
+    "format": "prettier --write .",
+    "web": "npm run dev --workspace web"
   },
   "devDependencies": {
     "prettier": "^3.9.10"
