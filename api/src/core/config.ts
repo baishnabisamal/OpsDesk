@@ -33,6 +33,16 @@ const envSchema = z.object({
   // A resolved ticket is closed automatically after this many quiet hours.
   AUTO_CLOSE_AFTER_HOURS: z.coerce.number().int().positive().default(72),
 
+  // Outgoing email (Mailpit catches it locally).
+  // An IP address by default: nodemailer resolves host names through DNS
+  // itself (not the hosts file), so "localhost" can time out offline.
+  SMTP_HOST: z.string().min(1).default("127.0.0.1"),
+  SMTP_PORT: z.coerce.number().int().default(1025),
+  MAIL_FROM: z.string().min(3).default("OpsDesk Support <support@opsdesk.local>"),
+  // Replies to supplier threads go to reply+<thread id>@this domain, and the
+  // mail provider posts them to the inbound webhook.
+  INBOUND_DOMAIN: z.string().min(3).default("inbound.opsdesk.local"),
+
   // The Python ML service. Ticket create never waits longer than the timeout.
   ML_URL: z.string().url().default("http://127.0.0.1:8001"),
   ML_SHARED_SECRET: z.string().min(16, "must be at least 16 characters"),
@@ -67,6 +77,12 @@ export function loadConfig(env: Record<string, string | undefined>) {
     refreshTokenTtlDays: e.REFRESH_TOKEN_TTL_DAYS,
     redis: { host: e.REDIS_HOST, port: e.REDIS_PORT },
     autoCloseAfterHours: e.AUTO_CLOSE_AFTER_HOURS,
+    mail: {
+      smtpHost: e.SMTP_HOST,
+      smtpPort: e.SMTP_PORT,
+      from: e.MAIL_FROM,
+      inboundDomain: e.INBOUND_DOMAIN,
+    },
     ml: {
       url: e.ML_URL.replace(/\/$/, ""), // no trailing slash
       sharedSecret: e.ML_SHARED_SECRET,
