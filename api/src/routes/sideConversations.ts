@@ -10,7 +10,7 @@ export const sideConversationsRouter = Router();
 sideConversationsRouter.use(authenticate);
 
 function parseId(value: unknown): string {
-  const parsed = z.string().uuid().safeParse(value);
+  const parsed = z.guid().safeParse(value);
   if (!parsed.success) throw notFound("Side conversation not found.");
   return parsed.data;
 }

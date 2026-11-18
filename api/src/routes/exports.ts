@@ -15,7 +15,7 @@ export const exportQuerySchema = z
   .object({
     status: z.enum(TICKET_STATUSES).optional(),
     region: z.enum(["MEA", "EU", "APAC", "AMER"]).optional(),
-    agency_id: z.string().uuid().optional(),
+    agency_id: z.guid().optional(),
     from: z.iso.date().optional(),
     to: z.iso.date().optional(),
   })

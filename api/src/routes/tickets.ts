@@ -31,7 +31,7 @@ ticketsRouter.use(authenticate);
 
 // An id that is not a UUID cannot exist, so it is a 404 like any unknown id.
 export function parseId(value: unknown): string {
-  const parsed = z.string().uuid().safeParse(value);
+  const parsed = z.guid().safeParse(value);
   if (!parsed.success) throw notFound("Ticket not found.");
   return parsed.data;
 }

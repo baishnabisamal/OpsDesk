@@ -9,10 +9,10 @@ import { forbidden, unauthorized } from "./errors.js";
 // What we put inside the access token. Short names are the JWT convention:
 // `sub` (subject) is the user id.
 const claimsSchema = z.object({
-  sub: z.string().uuid(),
+  sub: z.guid(),
   role: z.enum(ROLES),
-  agency_id: z.string().uuid().nullable(),
-  team_id: z.string().uuid().nullable(),
+  agency_id: z.guid().nullable(),
+  team_id: z.guid().nullable(),
 });
 
 export type TokenUser = {

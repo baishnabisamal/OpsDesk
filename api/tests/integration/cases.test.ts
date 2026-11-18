@@ -192,6 +192,31 @@ describe("cases", () => {
   });
 });
 
+// Found by the k6 load test: the seed makes case ids with md5(...)::uuid.
+// PostgreSQL accepts any 128-bit value as a uuid, but a strict RFC check
+// (version and variant digits) rejected them, so the case page answered 404.
+// An id the database handed out must always be accepted.
+describe("ids that are not RFC version-4 UUIDs", () => {
+  it("a case whose id came from md5() can be read", async () => {
+    const booking = await createBooking(agency.id);
+    const created = await ownerPool.query<{ id: string }>(
+      `INSERT INTO cases (id, booking_id, agency_id)
+       SELECT md5('case:' || id::text)::uuid, id, agency_id FROM bookings WHERE id = $1
+       RETURNING id`,
+      [booking.id],
+    );
+    const id = created.rows[0]!.id;
+    const res = await request(app).get(`/api/v1/cases/${id}`).set(bearer(requester));
+    expect(res.status).toBe(200);
+    expect(res.body.id).toBe(id);
+  });
+
+  it("text that is not an id at all is still a 404", async () => {
+    const res = await request(app).get("/api/v1/cases/not-a-uuid").set(bearer(requester));
+    expect(res.status).toBe(404);
+  });
+});
+
 describe("the database guards cases too", () => {
   it("refuses a second open case for the same booking", async () => {
     const booking = await createBooking(agency.id);

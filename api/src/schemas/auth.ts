@@ -43,6 +43,6 @@ export const inviteSchema = z
     email: emailSchema,
     full_name: z.string().trim().min(1).max(200),
     role: z.enum(["agent", "escalation_manager"]),
-    team_id: z.string().uuid(),
+    team_id: z.guid(),
   })
   .strict();

@@ -22,7 +22,7 @@ export const listTicketsSchema = z
   .object({
     status: z.enum(TICKET_STATUSES).optional(),
     priority: z.enum(PRIORITIES).optional(),
-    assignee_id: z.string().uuid().optional(),
+    assignee_id: z.guid().optional(),
     intent: z.enum(INTENTS).optional(),
     // "true" lists the review queue: tickets whose intent a person should check.
     needs_review: z.enum(["true", "false"]).optional(),
@@ -48,10 +48,10 @@ export type UpdateTicketInput = z.infer<typeof updateTicketSchema>;
 
 export const transitionSchema = z.object({ to: z.enum(TICKET_STATUSES) }).strict();
 
-export const assignSchema = z.object({ assignee_id: z.string().uuid() }).strict();
+export const assignSchema = z.object({ assignee_id: z.guid() }).strict();
 
 // PUT /tickets/:id/intent
 export const overrideIntentSchema = z.object({ intent: z.enum(INTENTS) }).strict();
 
 // POST /tickets/:id/links
-export const linkSchema = z.object({ ticket_id: z.string().uuid() }).strict();
+export const linkSchema = z.object({ ticket_id: z.guid() }).strict();

@@ -13,7 +13,7 @@ queuesRouter.use(authenticate);
 export const queueQuerySchema = z
   .object({
     region: z.enum(["MEA", "EU", "APAC", "AMER"]).optional(),
-    team_id: z.string().uuid().optional(),
+    team_id: z.guid().optional(),
     intent: z.enum(INTENTS).optional(),
     // "at_risk" or "breached" shows only the tickets in trouble.
     sla_state: z.enum(SLA_STATES).optional(),
