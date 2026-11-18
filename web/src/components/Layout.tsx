@@ -23,7 +23,13 @@ const STAFF_NAV = [
   { title: "Find", links: [{ to: "/tickets", label: "All tickets" }] },
 ];
 
-const LEAD_NAV = { title: "Lead", links: [{ to: "/insights", label: "Insights and export" }] };
+const LEAD_NAV = {
+  title: "Lead",
+  links: [
+    { to: "/insights", label: "Insights and export" },
+    { to: "/team", label: "Team" },
+  ],
+};
 
 const REQUESTER_NAV = [
   {

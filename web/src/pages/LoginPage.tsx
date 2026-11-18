@@ -1,22 +1,17 @@
 import { useState } from "react";
-import { login } from "../api/client";
+import { Link } from "react-router";
+import { api, ApiError, login } from "../api/client";
 import { ErrorNotice } from "../components/bits";
+import { AuthShell } from "../components/AuthShell";
 
-// The seeded demo accounts (api/scripts/seed.ts). All use the same password.
+// The seeded demo accounts (api/scripts/seed.ts). Shown only by the dev
+// server: a production build never lists accounts and a password.
 const DEMO_PASSWORD = "Password123!";
 const DEMO_ACCOUNTS = [
   { email: "agent1.eu@opsdesk.test", label: "Agent, EU team" },
   { email: "manager.eu@opsdesk.test", label: "Escalation manager" },
-  { email: "lead.eu@opsdesk.test", label: "Team lead (insights, export)" },
+  { email: "lead.eu@opsdesk.test", label: "Team lead (insights, team, export)" },
   { email: "user1@skyline-travels.test", label: "Travel agency user" },
-];
-
-// Illustration only: what a queue looks like. Not live data.
-const BOARD = [
-  { ref: "TBOH-48213", what: "Cancellation · Lisbon", left: "1h 50m" },
-  { ref: "TBOH-30977", what: "Booking not found · Dubai", left: "overdue 12m", late: true },
-  { ref: "TBOH-52140", what: "Amendment · Kyoto", left: "6h 05m" },
-  { ref: "TBOH-11486", what: "Refund · Cancún", left: "2d 3h" },
 ];
 
 export function LoginPage() {
@@ -24,10 +19,12 @@ export function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
+  const [resent, setResent] = useState(false);
 
   async function submit(asEmail = email, asPassword = password) {
     setBusy(true);
     setError(null);
+    setResent(false);
     try {
       await login(asEmail, asPassword);
       // The app re-renders on its own: the session listener sees the login.
@@ -37,65 +34,73 @@ export function LoginPage() {
     }
   }
 
+  const notVerified = error instanceof ApiError && error.code === "email_not_verified";
+
   return (
-    <div className="login">
-      <section className="login-art" aria-hidden="true">
-        <div>
-          <h1>
-            Every booking has a <em>deadline.</em>
-          </h1>
-          <p>
-            OpsDesk keeps hotel support tickets in order of what runs out first: check-in, the last
-            day to cancel for free, and the promise made to the agency.
-          </p>
-        </div>
-        <div className="board">
-          {BOARD.map((row) => (
-            <div key={row.ref} className={row.late ? "late" : undefined}>
-              <span>{row.ref}</span>
-              <span>{row.what}</span>
-              <span>{row.left}</span>
+    <AuthShell title="Sign in">
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          void submit();
+        }}
+      >
+        <label className="field">
+          <span>Email</span>
+          <input
+            className="input"
+            type="email"
+            autoComplete="username"
+            required
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+          />
+        </label>
+        <label className="field">
+          <span className="field-row">
+            Password <Link to="/forgot-password">Forgot it?</Link>
+          </span>
+          <input
+            className="input"
+            type="password"
+            autoComplete="current-password"
+            required
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+          />
+        </label>
+        <button className="btn primary" type="submit" disabled={busy}>
+          {busy ? "Signing in" : "Sign in"}
+        </button>
+
+        {notVerified ? (
+          <div className="notice" role="alert">
+            <p>Confirm your email address first. The link is in the email we sent you.</p>
+            <div className="row">
+              <button
+                type="button"
+                className="btn small"
+                disabled={resent}
+                onClick={() => {
+                  void api("/api/v1/auth/verify-email/resend", {
+                    method: "POST",
+                    body: { email },
+                  }).then(() => setResent(true));
+                }}
+              >
+                {resent ? "Sent. Check your inbox" : "Send the link again"}
+              </button>
             </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="login-form">
-        <h2>Sign in</h2>
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            void submit();
-          }}
-        >
-          <label className="field">
-            <span>Email</span>
-            <input
-              className="input"
-              type="email"
-              autoComplete="username"
-              required
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-            />
-          </label>
-          <label className="field">
-            <span>Password</span>
-            <input
-              className="input"
-              type="password"
-              autoComplete="current-password"
-              required
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-            />
-          </label>
-          <button className="btn primary" type="submit" disabled={busy}>
-            {busy ? "Signing in" : "Sign in"}
-          </button>
+          </div>
+        ) : (
           <ErrorNotice error={error} />
-        </form>
+        )}
+      </form>
 
+      <p className="auth-switch">
+        New travel agency? <Link to="/signup">Create an account</Link>
+      </p>
+
+      {import.meta.env.DEV ? (
         <div className="demo">
           <p>
             Demo accounts from the seed data. Password <span className="mono">{DEMO_PASSWORD}</span>
@@ -118,7 +123,7 @@ export function LoginPage() {
             ))}
           </div>
         </div>
-      </section>
-    </div>
+      ) : null}
+    </AuthShell>
   );
 }

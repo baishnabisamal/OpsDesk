@@ -154,6 +154,7 @@ export type StaffMember = {
   is_online: boolean;
   open_count: number;
   max_open: number | null;
+  invite_pending: boolean;
 };
 
 export type WeeklyThemes = {
