@@ -53,9 +53,9 @@ single Node.js process (one event loop on one CPU core). Next steps if that
 load were real: run several API processes (the API keeps no state in memory),
 then a read replica for the queue views.
 
-Latencies at 400/s were lower than at 50/s. That is the laptop's CPU staying at
-full speed under steady load, not the server getting faster; treat
-differences of a few milliseconds as noise.
+Latencies at 400/s were lower than at 50/s. The most likely reason is the
+laptop's CPU staying at full clock speed under steady load (not measured);
+either way, treat differences of a few milliseconds as noise.
 
 ## What the ML call costs
 
