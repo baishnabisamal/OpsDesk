@@ -33,6 +33,7 @@ export async function setup(project: TestProject) {
   process.env.APP_DB_USER = "opsdesk_app";
   process.env.APP_DB_PASSWORD = "app-test-password";
   process.env.JWT_SECRET = "test-secret-test-secret-test-secret-123";
+  process.env.INBOUND_WEBHOOK_SECRET = "test-inbound-webhook-secret-0123456789";
 
   // A throwaway Redis for the job queue tests.
   redis = await new GenericContainer("redis:7-alpine").withExposedPorts(6379).start();

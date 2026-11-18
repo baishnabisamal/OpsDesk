@@ -8,6 +8,7 @@ const validEnv = {
   APP_DB_PASSWORD: "app-password",
   JWT_SECRET: "x".repeat(32),
   ML_SHARED_SECRET: "m".repeat(16),
+  INBOUND_WEBHOOK_SECRET: "w".repeat(32),
 };
 
 describe("config", () => {

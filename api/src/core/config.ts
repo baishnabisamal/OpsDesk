@@ -42,6 +42,8 @@ const envSchema = z.object({
   // Replies to supplier threads go to reply+<thread id>@this domain, and the
   // mail provider posts them to the inbound webhook.
   INBOUND_DOMAIN: z.string().min(3).default("inbound.opsdesk.local"),
+  // Shared with the mail provider; signs every inbound webhook request.
+  INBOUND_WEBHOOK_SECRET: z.string().min(32, "must be at least 32 characters"),
 
   // The Python ML service. Ticket create never waits longer than the timeout.
   ML_URL: z.string().url().default("http://127.0.0.1:8001"),
@@ -77,6 +79,7 @@ export function loadConfig(env: Record<string, string | undefined>) {
     refreshTokenTtlDays: e.REFRESH_TOKEN_TTL_DAYS,
     redis: { host: e.REDIS_HOST, port: e.REDIS_PORT },
     autoCloseAfterHours: e.AUTO_CLOSE_AFTER_HOURS,
+    inboundWebhookSecret: e.INBOUND_WEBHOOK_SECRET,
     mail: {
       smtpHost: e.SMTP_HOST,
       smtpPort: e.SMTP_PORT,

@@ -4,6 +4,7 @@ import { requestLogger } from "./core/logger.js";
 import { authRouter } from "./routes/auth.js";
 import { casesRouter } from "./routes/cases.js";
 import { healthRouter } from "./routes/health.js";
+import { inboundRouter } from "./routes/inbound.js";
 import { meRouter } from "./routes/me.js";
 import { queuesRouter } from "./routes/queues.js";
 import { sideConversationsRouter } from "./routes/sideConversations.js";
@@ -15,6 +16,8 @@ export function createApp() {
   const app = express();
 
   app.use(requestLogger);
+  // Before express.json on purpose: the webhook must see the raw bytes.
+  app.use("/api/v1/inbound", inboundRouter);
   app.use(express.json({ limit: "100kb" }));
 
   app.use(healthRouter);

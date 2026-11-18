@@ -20,6 +20,7 @@ export default defineConfig({
             APP_DB_PASSWORD: "unused-password",
             JWT_SECRET: "unit-test-secret-unit-test-secret-123",
             ML_SHARED_SECRET: "unit-test-ml-secret",
+            INBOUND_WEBHOOK_SECRET: "unit-test-inbound-secret-unit-test-123",
           },
         },
       },
