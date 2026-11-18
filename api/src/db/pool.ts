@@ -30,3 +30,8 @@ export async function pingDatabase(): Promise<boolean> {
 export function closePool() {
   return pool.end();
 }
+
+// For the metrics page: how busy the pool is right now.
+export function poolStats() {
+  return { total: pool.totalCount, idle: pool.idleCount, waiting: pool.waitingCount };
+}

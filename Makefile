@@ -2,7 +2,9 @@ COMPOSE = docker compose --env-file .env -f infra/docker-compose.yml
 
 ML_PYTHON = ml/.venv/bin/python
 
-.PHONY: help setup up down reset ps logs migrate seed dev worker realtime test test-perf lint format ml-setup ml-data ml-train ml-dev ml-test
+OBSERVE = $(COMPOSE) --profile observability
+
+.PHONY: help setup up observe down reset ps logs migrate seed dev worker realtime test test-perf lint format ml-setup ml-data ml-train ml-dev ml-test
 
 help: ## List the available commands
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F ':.*## ' '{printf "  make %-9s %s\n", $$1, $$2}'
@@ -14,8 +16,11 @@ setup: ## Create .env (if missing) and install dependencies
 up: ## Start Postgres, Redis and Mailpit, and wait until healthy
 	$(COMPOSE) up -d --wait
 
+observe: ## Start Prometheus (localhost:9091) and Grafana (localhost:3002)
+	$(OBSERVE) up -d
+
 down: ## Stop the containers (data is kept)
-	$(COMPOSE) down
+	$(OBSERVE) down
 
 reset: ## Stop the containers and delete the database volume
 	$(COMPOSE) down -v

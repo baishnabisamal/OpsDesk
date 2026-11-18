@@ -1,6 +1,7 @@
 import express from "express";
 import { errorHandler, notFoundHandler } from "./core/errors.js";
 import { requestLogger } from "./core/logger.js";
+import { metricsMiddleware } from "./core/metrics.js";
 import { apiRules, createLimiterRedis, createRateLimiter } from "./core/rateLimit.js";
 import { authRouter } from "./routes/auth.js";
 import { casesRouter } from "./routes/cases.js";
@@ -27,6 +28,7 @@ export function createApp() {
   const app = express();
 
   app.use(requestLogger);
+  app.use(metricsMiddleware);
   // Before express.json on purpose: the webhook must see the raw bytes.
   app.use("/api/v1/inbound", inboundRouter);
   app.use(express.json({ limit: "100kb" }));

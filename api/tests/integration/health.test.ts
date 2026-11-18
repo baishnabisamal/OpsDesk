@@ -11,10 +11,12 @@ describe("health checks", () => {
     expect(res.body).toEqual({ status: "ok" });
   });
 
-  it("GET /readyz reports PostgreSQL", async () => {
+  it("GET /readyz reports PostgreSQL and Redis", async () => {
+    await request(app).get("/readyz"); // the first call opens the Redis connection
+    await new Promise((resolve) => setTimeout(resolve, 300));
     const res = await request(app).get("/readyz");
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ status: "ready", checks: { postgres: "ok" } });
+    expect(res.body).toEqual({ status: "ready", checks: { postgres: "ok", redis: "ok" } });
   });
 
   it("every response carries a request id", async () => {
