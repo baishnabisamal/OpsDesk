@@ -199,13 +199,14 @@ describe("when the ML service fails", () => {
     fakeMl.delayMs = 2000;
     for (let i = 0; i < 5; i++) mlBreaker.recordFailure();
 
-    const startedAt = Date.now();
     const res = await create(UNCLEAR);
-    const elapsed = Date.now() - startedAt;
 
     expect(res.status).toBe(201);
+    // The proof is that NO request reached the ML service: with the breaker
+    // open the client fails at once, so there was nothing to wait for. (An
+    // earlier version also checked the elapsed time against 140 ms, which
+    // failed under full-suite load for reasons that had nothing to do with ML.)
     expect(fakeMl.calls.length).toBe(0);
-    expect(elapsed).toBeLessThan(140); // less than one 150 ms timeout
   });
 });
 

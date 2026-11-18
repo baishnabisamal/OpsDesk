@@ -37,6 +37,11 @@ export async function setup(project: TestProject) {
   process.env.APP_DB_PASSWORD = "app-test-password";
   process.env.JWT_SECRET = "test-secret-test-secret-test-secret-123";
   process.env.INBOUND_WEBHOOK_SECRET = "test-inbound-webhook-secret-0123456789";
+  // Very high limits for the app under test: concurrency tests fire hundreds
+  // of requests as one user. rateLimit.test.ts builds its own small limiter.
+  process.env.RATE_LIMIT_USER_CAPACITY = "1000000";
+  process.env.RATE_LIMIT_AGENCY_CAPACITY = "1000000";
+  process.env.RATE_LIMIT_LOGIN_CAPACITY = "1000000";
   // A fresh, empty archive directory for each test run.
   process.env.ARCHIVE_DIR = await mkdtemp(path.join(tmpdir(), "opsdesk-archive-"));
 

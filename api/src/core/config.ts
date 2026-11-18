@@ -51,6 +51,15 @@ const envSchema = z.object({
   ARCHIVE_DIR: z.string().min(1).default("../var/archive"),
   ARCHIVE_RETENTION_MONTHS: z.coerce.number().int().min(1).default(12),
 
+  // Token buckets: how many requests in a burst, and how many per second
+  // after that. Per user, per agency, and per IP address for login.
+  RATE_LIMIT_USER_CAPACITY: z.coerce.number().positive().default(120),
+  RATE_LIMIT_USER_PER_SECOND: z.coerce.number().positive().default(2),
+  RATE_LIMIT_AGENCY_CAPACITY: z.coerce.number().positive().default(600),
+  RATE_LIMIT_AGENCY_PER_SECOND: z.coerce.number().positive().default(10),
+  RATE_LIMIT_LOGIN_CAPACITY: z.coerce.number().positive().default(10),
+  RATE_LIMIT_LOGIN_PER_SECOND: z.coerce.number().positive().default(0.2),
+
   // The Python ML service. Ticket create never waits longer than the timeout.
   ML_URL: z.string().url().default("http://127.0.0.1:8001"),
   ML_SHARED_SECRET: z.string().min(16, "must be at least 16 characters"),
@@ -89,6 +98,14 @@ export function loadConfig(env: Record<string, string | undefined>) {
     inboundWebhookSecret: e.INBOUND_WEBHOOK_SECRET,
     archiveDir: e.ARCHIVE_DIR,
     archiveRetentionMonths: e.ARCHIVE_RETENTION_MONTHS,
+    rateLimit: {
+      userCapacity: e.RATE_LIMIT_USER_CAPACITY,
+      userPerSecond: e.RATE_LIMIT_USER_PER_SECOND,
+      agencyCapacity: e.RATE_LIMIT_AGENCY_CAPACITY,
+      agencyPerSecond: e.RATE_LIMIT_AGENCY_PER_SECOND,
+      loginCapacity: e.RATE_LIMIT_LOGIN_CAPACITY,
+      loginPerSecond: e.RATE_LIMIT_LOGIN_PER_SECOND,
+    },
     mail: {
       smtpHost: e.SMTP_HOST,
       smtpPort: e.SMTP_PORT,
