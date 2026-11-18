@@ -47,11 +47,21 @@ export function TicketTable({ tickets, staff = [], showAssignee = true }: Props)
           <tr>
             <th scope="col">Ticket</th>
             <th scope="col">Status</th>
-            <th scope="col">Priority</th>
-            <th scope="col">Intent</th>
+            <th scope="col" className="opt">
+              Priority
+            </th>
+            <th scope="col" className="opt">
+              Intent
+            </th>
             <th scope="col">SLA</th>
-            {showAssignee ? <th scope="col">Owner</th> : null}
-            <th scope="col">Region</th>
+            {showAssignee ? (
+              <th scope="col" className="opt">
+                Owner
+              </th>
+            ) : null}
+            <th scope="col" className="opt">
+              Region
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -78,10 +88,10 @@ export function TicketTable({ tickets, staff = [], showAssignee = true }: Props)
               <td>
                 <StatusText status={ticket.status} />
               </td>
-              <td>
+              <td className="opt">
                 <PriorityText priority={ticket.priority} />
               </td>
-              <td>
+              <td className="opt">
                 {INTENT_LABEL[ticket.intent]}
                 {ticket.needs_review ? (
                   <>
@@ -94,7 +104,7 @@ export function TicketTable({ tickets, staff = [], showAssignee = true }: Props)
                 <SlaClock ticket={ticket} />
               </td>
               {showAssignee ? (
-                <td>
+                <td className="opt">
                   {ticket.assignee_id ? (
                     (names.get(ticket.assignee_id) ?? "Staff")
                   ) : (
@@ -102,7 +112,7 @@ export function TicketTable({ tickets, staff = [], showAssignee = true }: Props)
                   )}
                 </td>
               ) : null}
-              <td className="mono">{ticket.region_code}</td>
+              <td className="mono opt">{ticket.region_code}</td>
             </tr>
           ))}
         </tbody>

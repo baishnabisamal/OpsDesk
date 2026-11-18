@@ -565,6 +565,19 @@ table.tickets {
   margin-top: 2px;
 }
 
+/* On a phone: subject, status and SLA. The rest is on the ticket page. */
+@media (max-width: 700px) {
+  table.tickets {
+    min-width: 0;
+  }
+  .tickets .opt {
+    display: none;
+  }
+  .tickets .sla {
+    min-width: 92px;
+  }
+}
+
 .empty {
   padding: 48px 0;
   text-align: center;
@@ -756,9 +769,6 @@ table.tickets {
   .ticket-grid {
     grid-template-columns: 1fr;
     gap: 28px;
-  }
-  .rail {
-    order: -1;
   }
 }
 
