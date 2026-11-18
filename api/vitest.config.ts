@@ -35,6 +35,21 @@ export default defineConfig({
           hookTimeout: 60_000,
         },
       },
+      // Measurements (make test-perf). Not part of the normal run: slow on purpose.
+      {
+        test: {
+          name: "perf",
+          include: ["tests/perf/**/*.test.ts"],
+          environment: "node",
+          // Starts a throwaway Postgres container once, before all files.
+          globalSetup: ["tests/integration/globalSetup.ts"],
+          // gc() becomes available, so the memory test can measure memory that
+          // is really still in use rather than garbage not yet collected.
+          execArgv: ["--expose-gc"],
+          testTimeout: 180_000,
+          hookTimeout: 180_000,
+        },
+      },
     ],
   },
 });

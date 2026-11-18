@@ -3,6 +3,7 @@ import { errorHandler, notFoundHandler } from "./core/errors.js";
 import { requestLogger } from "./core/logger.js";
 import { authRouter } from "./routes/auth.js";
 import { casesRouter } from "./routes/cases.js";
+import { exportsRouter } from "./routes/exports.js";
 import { healthRouter } from "./routes/health.js";
 import { inboundRouter } from "./routes/inbound.js";
 import { insightsRouter } from "./routes/insights.js";
@@ -29,6 +30,7 @@ export function createApp() {
   app.use("/api/v1/queues", queuesRouter);
   app.use("/api/v1/side-conversations", sideConversationsRouter);
   app.use("/api/v1/insights", insightsRouter);
+  app.use("/api/v1/exports", exportsRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

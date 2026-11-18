@@ -9,7 +9,8 @@
     "realtime": "tsx --env-file=../.env src/realtime/main.ts",
     "migrate": "tsx --env-file=../.env scripts/migrate.ts",
     "seed": "tsx --env-file=../.env scripts/seed.ts",
-    "test": "vitest run",
+    "test": "vitest run --project unit --project integration",
+    "test:perf": "vitest run --project perf",
     "test:watch": "vitest",
     "lint": "eslint . && tsc --noEmit"
   },
