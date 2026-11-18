@@ -5,6 +5,7 @@ import { authRouter } from "./routes/auth.js";
 import { casesRouter } from "./routes/cases.js";
 import { healthRouter } from "./routes/health.js";
 import { inboundRouter } from "./routes/inbound.js";
+import { insightsRouter } from "./routes/insights.js";
 import { meRouter } from "./routes/me.js";
 import { queuesRouter } from "./routes/queues.js";
 import { sideConversationsRouter } from "./routes/sideConversations.js";
@@ -27,6 +28,7 @@ export function createApp() {
   app.use("/api/v1/me", meRouter);
   app.use("/api/v1/queues", queuesRouter);
   app.use("/api/v1/side-conversations", sideConversationsRouter);
+  app.use("/api/v1/insights", insightsRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

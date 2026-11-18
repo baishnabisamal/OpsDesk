@@ -94,3 +94,48 @@ def load_model(path: Path = DEFAULT_MODEL_PATH) -> IntentModel | None:
         return None
     saved = joblib.load(path)
     return IntentModel(pipeline=saved["pipeline"], version=saved["version"], macro_f1=saved["macro_f1"])
+
+
+def cluster_texts(texts: list[str], max_clusters: int = 8, top_terms: int = 3) -> list[dict]:
+    """Groups similar texts into themes with k-means, and names each theme.
+
+    TF-IDF turns each text into a vector (fitted on THIS batch, so the words
+    of the week decide the themes). k-means puts nearby vectors in the same
+    group: it picks k centre points, gives every text to the nearest centre,
+    moves each centre to the middle of its texts, and repeats until stable.
+
+    A theme is named by the words with the largest weight in its centre.
+    random_state is fixed, so the same texts always give the same themes.
+
+    Returns, biggest theme first: [{"terms": [...], "members": [indexes]}].
+    """
+    from sklearn.cluster import KMeans
+    from sklearn.feature_extraction.text import TfidfVectorizer
+
+    if len(texts) == 0:
+        return []
+
+    vectorizer = TfidfVectorizer(stop_words="english", ngram_range=(1, 2), min_df=1, max_df=0.9)
+    try:
+        vectors = vectorizer.fit_transform(texts)
+    except ValueError:
+        # Every word was a stop word or too common: nothing to cluster on.
+        return [{"terms": [], "members": list(range(len(texts)))}]
+
+    # Never more themes than texts; roughly one theme per five texts.
+    k = max(1, min(max_clusters, len(texts) // 5 or 1, len(texts)))
+    model = KMeans(n_clusters=k, n_init=10, random_state=0)
+    labels = model.fit_predict(vectors)
+
+    vocabulary = vectorizer.get_feature_names_out()
+    clusters = []
+    for cluster in range(k):
+        members = [index for index, label in enumerate(labels) if label == cluster]
+        if not members:
+            continue
+        centre = model.cluster_centers_[cluster]
+        best = centre.argsort()[::-1][:top_terms]
+        clusters.append({"terms": [str(vocabulary[i]) for i in best if centre[i] > 0], "members": members})
+
+    clusters.sort(key=lambda c: len(c["members"]), reverse=True)
+    return clusters

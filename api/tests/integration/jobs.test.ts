@@ -162,6 +162,7 @@ describe("the job runner (BullMQ on a real Redis)", () => {
       "partition-maintenance",
       "routing-retry",
       "sla-scan",
+      "theme-rollup",
     ]);
     for (const job of Object.values(JOBS)) {
       expect(job.everyMs).toBeGreaterThan(0);

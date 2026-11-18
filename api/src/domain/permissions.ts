@@ -28,6 +28,9 @@ const PERMISSIONS = {
   // Supplier threads are internal: requesters cannot even see them.
   "side_conversation:read": STAFF,
   "side_conversation:write": STAFF,
+  // Leads see insights and run exports (README section 1).
+  "insights:read": ["lead"],
+  "export:run": ["lead"],
   "message:read": EVERYONE,
   "message:write_public": EVERYONE,
   "message:write_internal": STAFF,

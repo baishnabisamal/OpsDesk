@@ -6,6 +6,7 @@ import {
 } from "../services/maintenanceService.js";
 import { retryRouting } from "../services/routingService.js";
 import { scanSla } from "../services/slaScanService.js";
+import { rollupRecentWeeks } from "../services/themeService.js";
 
 // The list of scheduled jobs: a name, how often it runs, and the function.
 //
@@ -33,4 +34,5 @@ export const JOBS: Record<string, JobDefinition> = {
   "partition-maintenance": { everyMs: DAY, run: () => ensurePartitions() },
   "load-reconciliation": { everyMs: DAY, run: () => reconcileLoad() },
   "idempotency-cleanup": { everyMs: DAY, run: () => purgeIdempotencyKeys() },
+  "theme-rollup": { everyMs: DAY, run: () => rollupRecentWeeks() },
 };

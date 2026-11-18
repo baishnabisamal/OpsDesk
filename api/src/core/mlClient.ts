@@ -28,8 +28,16 @@ const similarityResponse = z.object({
 export type Prediction = z.infer<typeof classifyResponse>;
 export type SimilarityScore = { id: string; score: number };
 
-async function post<T>(path: string, body: object, schema: z.ZodType<T>): Promise<T | null> {
-  if (!mlBreaker.canRequest()) {
+// `options` exist for the weekly clustering job: it runs in the background,
+// may take seconds, and must not trip the breaker that protects ticket create.
+async function post<T>(
+  path: string,
+  body: object,
+  schema: z.ZodType<T>,
+  options: { timeoutMs?: number; useBreaker?: boolean } = {},
+): Promise<T | null> {
+  const useBreaker = options.useBreaker ?? true;
+  if (useBreaker && !mlBreaker.canRequest()) {
     return null; // breaker is open: fail instantly, do not touch the network
   }
 
@@ -39,16 +47,16 @@ async function post<T>(path: string, body: object, schema: z.ZodType<T>): Promis
       headers: { "Content-Type": "application/json", "X-ML-Secret": config.ml.sharedSecret },
       body: JSON.stringify(body),
       // Cancels the request, and rejects, when the time is up.
-      signal: AbortSignal.timeout(config.ml.timeoutMs),
+      signal: AbortSignal.timeout(options.timeoutMs ?? config.ml.timeoutMs),
     });
     if (!response.ok) {
       throw new Error(`ML service answered ${response.status}`);
     }
     const parsed = schema.parse(await response.json());
-    mlBreaker.recordSuccess();
+    if (useBreaker) mlBreaker.recordSuccess();
     return parsed;
   } catch (err) {
-    mlBreaker.recordFailure();
+    if (useBreaker) mlBreaker.recordFailure();
     logger.warn({ path, reason: (err as Error).message }, "ML call failed, using fallback");
     return null;
   }
@@ -71,4 +79,29 @@ export async function similarity(
   if (candidates.length === 0) return [];
   const result = await post("/similarity", { text, candidates }, similarityResponse);
   return result ? result.scores : null;
+}
+
+const clusterResponse = z.object({
+  clusters: z.array(
+    z.object({
+      label: z.string(),
+      terms: z.array(z.string()),
+      size: z.number().int().nonnegative(),
+      ticket_ids: z.array(z.string()),
+    }),
+  ),
+});
+
+export type Cluster = z.infer<typeof clusterResponse>["clusters"][number];
+
+// Groups a week's tickets into themes. Background work: a generous timeout,
+// and outside the circuit breaker that guards ticket create.
+export async function clusterThemes(
+  tickets: { id: string; text: string }[],
+): Promise<Cluster[] | null> {
+  const result = await post("/themes/cluster", { tickets }, clusterResponse, {
+    timeoutMs: 30_000,
+    useBreaker: false,
+  });
+  return result ? result.clusters : null;
 }

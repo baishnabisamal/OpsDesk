@@ -23,6 +23,8 @@ const EXPECTED: Record<Action, Actor[]> = {
   "queue:read": staff,
   "side_conversation:read": staff,
   "side_conversation:write": staff,
+  "insights:read": ["lead"],
+  "export:run": ["lead"],
   "message:read": everyone,
   "message:write_public": everyone,
   "message:write_internal": staff,

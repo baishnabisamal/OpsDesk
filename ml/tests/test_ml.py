@@ -138,3 +138,44 @@ def test_without_a_model_the_service_says_503(monkeypatch, tmp_path):
         assert test_client.get("/healthz").json()["model_loaded"] is False
         response = test_client.post("/classify", json={"text": "refund"}, headers=HEADERS)
         assert response.status_code == 503
+
+
+# --- Themes ------------------------------------------------------------------
+
+
+def _ticket(i: int, text: str) -> dict:
+    return {"id": f"t{i}", "text": text}
+
+
+def test_cluster_groups_similar_tickets_and_names_them(client):
+    refunds = [_ticket(i, f"Refund not received for cancelled booking number {i}") for i in range(10)]
+    vouchers = [_ticket(100 + i, f"Voucher shows wrong dates for stay {i}") for i in range(10)]
+    response = client.post(
+        "/themes/cluster", headers=HEADERS, json={"tickets": refunds + vouchers, "max_clusters": 2}
+    )
+    assert response.status_code == 200
+    clusters = response.json()["clusters"]
+    assert len(clusters) == 2
+    groups = [set(cluster["ticket_ids"]) for cluster in clusters]
+    assert {t["id"] for t in refunds} in groups
+    assert {t["id"] for t in vouchers} in groups
+    labels = " ".join(cluster["label"] for cluster in clusters)
+    assert "refund" in labels and "voucher" in labels
+
+
+def test_cluster_is_deterministic(client):
+    tickets = [_ticket(i, text) for i, text in enumerate(["late checkout", "refund late", "voucher wrong"] * 5)]
+    first = client.post("/themes/cluster", headers=HEADERS, json={"tickets": tickets}).json()
+    second = client.post("/themes/cluster", headers=HEADERS, json={"tickets": tickets}).json()
+    assert first == second
+
+
+def test_cluster_handles_tiny_and_empty_input(client):
+    assert client.post("/themes/cluster", headers=HEADERS, json={"tickets": []}).json()["clusters"] == []
+    one = client.post("/themes/cluster", headers=HEADERS, json={"tickets": [_ticket(1, "the and of")]})
+    assert one.status_code == 200
+    assert one.json()["clusters"][0]["size"] == 1
+
+
+def test_cluster_needs_the_secret(client):
+    assert client.post("/themes/cluster", json={"tickets": []}).status_code == 401

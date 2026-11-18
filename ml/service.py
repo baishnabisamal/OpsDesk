@@ -14,7 +14,7 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
-from model import DEFAULT_MODEL_PATH, IntentModel, load_model
+from model import DEFAULT_MODEL_PATH, IntentModel, cluster_texts, load_model
 
 # What the service knows while it runs: just the loaded model.
 state: dict[str, IntentModel | None] = {"model": None}
@@ -65,6 +65,11 @@ class SimilarityRequest(BaseModel):
     candidates: list[Candidate] = Field(max_length=50)
 
 
+class ClusterRequest(BaseModel):
+    tickets: list[Candidate] = Field(max_length=5000)
+    max_clusters: int = Field(default=8, ge=1, le=30)
+
+
 # --- Endpoints ---------------------------------------------------------------
 
 
@@ -93,4 +98,23 @@ def similarity(request: SimilarityRequest, model: IntentModel = Depends(get_mode
             for candidate, score in zip(request.candidates, scores)
         ],
         "model_version": model.version,
+    }
+
+
+@app.post("/themes/cluster", dependencies=[Depends(require_secret)])
+def themes_cluster(request: ClusterRequest) -> dict:
+    """Weekly themes. Needs no trained model: it learns from the texts it gets."""
+    texts = [ticket.text for ticket in request.tickets]
+    clusters = cluster_texts(texts, max_clusters=request.max_clusters)
+    return {
+        "clusters": [
+            {
+                "label": " / ".join(cluster["terms"]) or "(no common words)",
+                "terms": cluster["terms"],
+                "size": len(cluster["members"]),
+                "ticket_ids": [request.tickets[i].id for i in cluster["members"]],
+            }
+            for cluster in clusters
+        ],
+        "method": "tfidf-kmeans",
     }
