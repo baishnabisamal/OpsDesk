@@ -4,7 +4,7 @@ ML_PYTHON = ml/.venv/bin/python
 
 OBSERVE = $(COMPOSE) --profile observability
 
-.PHONY: help setup up observe down reset ps logs migrate seed dev worker realtime test test-perf lint format ml-setup ml-data ml-train ml-dev ml-test
+.PHONY: help setup up observe down reset ps logs migrate seed dev worker realtime test test-perf contract lint format ml-setup ml-data ml-train ml-dev ml-test
 
 help: ## List the available commands
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F ':.*## ' '{printf "  make %-9s %s\n", $$1, $$2}'
@@ -51,6 +51,9 @@ test: ## Run the test suite
 
 test-perf: ## Measure the 100,000-row export (slow)
 	npm run test:perf --workspace api
+
+contract: ## Schemathesis against a throwaway database: the API must never answer 500
+	./tools/contract.sh
 
 ml-setup: ## Create the Python virtual environment for the ML service
 	python3 -m venv ml/.venv

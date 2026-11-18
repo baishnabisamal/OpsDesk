@@ -51,6 +51,16 @@ function fromDatabaseError(err: unknown): AppError | null {
         "invalid_reference",
         "The request refers to a record that does not exist.",
       );
+    // Text PostgreSQL cannot store (a NUL character, an invalid byte). The
+    // middleware in rejectNul.ts stops NUL first; this is the backstop.
+    case "22021": // character_not_in_repertoire
+    case "22P05": // untranslatable_character
+      return new AppError(
+        400,
+        "invalid_characters",
+        "Bad request",
+        "The text contains characters that cannot be stored.",
+      );
     case "23514": // check_violation
       return unprocessable("rule_violation", "The change breaks a data rule.");
     default:
@@ -72,6 +82,34 @@ function toAppError(err: unknown): AppError {
   // express.json() throws this when the body is not valid JSON.
   if (err instanceof SyntaxError && "body" in err) {
     return badRequest("The request body is not valid JSON.");
+  }
+
+  // The body parsers (express.json, express.raw) reject a request with an
+  // error that carries its own 4xx status and a `type`, for example
+  // "entity.too.large" (413) or "encoding.unsupported" (415). Schemathesis
+  // found that these used to become 500s. They are the client's mistake, so
+  // the status is passed through and the type becomes the stable code.
+  if (
+    typeof err === "object" &&
+    err !== null &&
+    "status" in err &&
+    typeof err.status === "number" &&
+    err.status >= 400 &&
+    err.status < 500 &&
+    "type" in err &&
+    typeof err.type === "string"
+  ) {
+    const code = err.type.replaceAll(".", "_"); // entity.too.large -> entity_too_large
+    const titles: Record<number, string> = {
+      413: "Payload too large",
+      415: "Unsupported media type",
+    };
+    return new AppError(
+      err.status,
+      code,
+      titles[err.status] ?? "Bad request",
+      String((err as { message?: unknown }).message ?? ""),
+    );
   }
 
   const dbError = fromDatabaseError(err);

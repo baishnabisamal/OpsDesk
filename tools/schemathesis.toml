@@ -1,0 +1,19 @@
+# Schemathesis settings for the "real ids" passes of make contract.
+#
+# With random ids almost every request about a ticket gets 404, so the code
+# behind it (permissions, state machine, version checks) is never reached.
+# These passes put REAL ids from the seeded contract database into the path,
+# and Schemathesis generates everything else. The values come from
+# environment variables that tools/contract.sh sets.
+
+[parameters]
+"path.id" = "${CT_TICKET}"
+"path.linkedId" = "${CT_OTHER_TICKET}"
+
+[[operations]]
+include-path = "/api/v1/cases/{id}"
+parameters = { "path.id" = "${CT_CASE}" }
+
+[[operations]]
+include-path-regex = "^/api/v1/side-conversations/"
+parameters = { "path.id" = "${CT_SIDE}" }

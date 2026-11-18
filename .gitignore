@@ -20,6 +20,8 @@ __pycache__/
 
 # Trained models and generated data
 var/
+# Schemathesis cache (make contract)
+.schemathesis/
 *.joblib
 ml/models/
 exports/

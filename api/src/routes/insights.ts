@@ -10,7 +10,7 @@ insightsRouter.use(authenticate);
 
 // ?week=2026-11-16 (any day of that week; it is moved to the Monday).
 // Without it: the current week.
-const themesQuerySchema = z.object({ week: z.iso.date().optional() }).strict();
+export const themesQuerySchema = z.object({ week: z.iso.date().optional() }).strict();
 
 insightsRouter.get("/themes", async (req, res) => {
   const query = themesQuerySchema.parse(req.query);

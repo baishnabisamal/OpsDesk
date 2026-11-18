@@ -8,7 +8,7 @@ export const meRouter = Router();
 
 meRouter.use(authenticate);
 
-const presenceSchema = z.object({ online: z.boolean() }).strict();
+export const presenceSchema = z.object({ online: z.boolean() }).strict();
 
 // An agent goes online to start receiving tickets, and offline to stop.
 // Tickets they already hold stay with them.

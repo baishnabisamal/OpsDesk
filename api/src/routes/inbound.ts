@@ -2,6 +2,7 @@ import express, { Router } from "express";
 import { z } from "zod";
 import { config } from "../core/config.js";
 import { AppError, badRequest } from "../core/errors.js";
+import { containsNul, invalidCharacters } from "../core/rejectNul.js";
 import { SIGNATURE_HEADER, TIMESTAMP_HEADER, verify } from "../core/webhookSignature.js";
 import { receiveInboundEmail } from "../services/inboundEmailService.js";
 
@@ -35,6 +36,7 @@ inboundRouter.post(
     } catch {
       throw badRequest("The request body is not valid JSON.");
     }
+    if (containsNul(json)) throw invalidCharacters();
     const email = inboundEmailSchema.parse(json);
 
     // 200 for accepted, quarantined AND duplicate: the provider retries any
@@ -44,7 +46,7 @@ inboundRouter.post(
   },
 );
 
-const inboundEmailSchema = z.object({
+export const inboundEmailSchema = z.object({
   provider_message_id: z.string().trim().min(1).max(300),
   from: z.string().trim().email().max(254),
   to: z.string().trim().min(3).max(254),

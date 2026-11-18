@@ -11,7 +11,7 @@ export const exportsRouter = Router();
 
 exportsRouter.use(authenticate);
 
-const exportQuerySchema = z
+export const exportQuerySchema = z
   .object({
     status: z.enum(TICKET_STATUSES).optional(),
     region: z.enum(["MEA", "EU", "APAC", "AMER"]).optional(),

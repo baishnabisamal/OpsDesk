@@ -10,7 +10,7 @@ export const queuesRouter = Router();
 
 queuesRouter.use(authenticate);
 
-const queueQuerySchema = z
+export const queueQuerySchema = z
   .object({
     region: z.enum(["MEA", "EU", "APAC", "AMER"]).optional(),
     team_id: z.string().uuid().optional(),
