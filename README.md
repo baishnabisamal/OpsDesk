@@ -4,7 +4,7 @@ A travel-aware operations ticketing system. Travel agencies raise tickets about 
 
 **Stack:** PostgreSQL, Express, React, Node (PERN), with Redis for queues and a small Python service for machine learning.
 
-**Status:** Phases 1 to 4 are built and their gate tests pass: the ticket core; intent classification and linkage into cases; SLA deadlines, routing, background workers, escalation and queue views; side conversations, the outbox relay, email, the signed inbound webhook and live updates over WebSockets. Phases 5 and 6 are still design only. The intent model is trained on synthetic tickets, so its macro-F1 (0.997) shows that the pipeline works; it is not a measurement on real tickets. Latency figures in this document are still targets: no load test has been run yet.
+**Status:** Phases 1 to 5 are built and their gate tests pass: the ticket core; intent classification and linkage; SLA, routing, workers and queues; side conversations, outbox relay, email, webhook and WebSockets; weekly themes, streaming export, archival, rate limiting, metrics and contract tests. Phase 6 (UI, load tests, CI) is still design only. Measured so far: a 100,000-row export streams in 4.8 s with live heap growth of 3.1 MB; Schemathesis found no 500s in 7,821 generated requests. The intent model is trained on synthetic tickets, so its macro-F1 (0.997) shows the pipeline works, not real-world quality. Request latency figures are still targets: no load test has been run yet.
 
 ## Contents
 
