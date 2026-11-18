@@ -257,9 +257,17 @@ describe("append-only data and no deletes", () => {
     });
   });
 
-  it("the app role cannot read the outbox or change users", async () => {
+  it("only the system actor can read the outbox, and nobody can change users", async () => {
+    // Since Phase 4 the relay (system actor) reads the outbox, so the app role
+    // has SELECT on it. Row-Level Security keeps every other identity out.
     await asApp(asAgent(), async (db) => {
-      await expectDbError(() => db.query("SELECT * FROM outbox"), PERMISSION_DENIED);
+      expect(await countRows(db, "outbox")).toBe(0);
+    });
+    await asApp(asRequesterA(), async (db) => {
+      expect(await countRows(db, "outbox")).toBe(0);
+    });
+    await asApp({ role: "system" }, async (db) => {
+      expect(await countRows(db, "outbox")).toBeGreaterThan(0);
     });
     await asApp(asAgent(), async (db) => {
       await expectDbError(() => db.query("UPDATE users SET role = 'lead'"), PERMISSION_DENIED);
