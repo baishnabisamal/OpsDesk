@@ -62,10 +62,12 @@ describe("token bucket rate limiting", () => {
   });
 
   it("refills over time", async () => {
-    const app = smallApp([rule(1, 20)]); // a token every 50 ms
+    // A token every 500 ms. (A first version used 50 ms, and under full-suite
+    // load the second request sometimes came late enough to find a new token.)
+    const app = smallApp([rule(1, 2)]);
     expect((await request(app).get("/ping")).status).toBe(200);
     expect((await request(app).get("/ping")).status).toBe(429);
-    await new Promise((resolve) => setTimeout(resolve, 120));
+    await new Promise((resolve) => setTimeout(resolve, 650));
     expect((await request(app).get("/ping")).status).toBe(200);
   });
 

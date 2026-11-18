@@ -33,10 +33,32 @@ async function makePartition(table: string, month: string) {
   const [year, mm] = month.split("-");
   const next =
     mm === "12" ? `${Number(year) + 1}-01` : `${year}-${String(Number(mm) + 1).padStart(2, "0")}`;
-  await ownerPool.query(
-    `CREATE TABLE ${table}_${year}_${mm} PARTITION OF ${table}
-       FOR VALUES FROM ('${month}-01 00:00:00+00') TO ('${next}-01 00:00:00+00')`,
-  );
+  // Creating a partition locks the parent AND the tables its foreign keys
+  // point at. Done plainly, it deadlocked with other test files' requests
+  // (and PostgreSQL killed THEIR request). So, like the app's own partition
+  // function (migration 012): take every lock first, wait at most 200 ms,
+  // and retry if busy.
+  for (let attempt = 1; ; attempt++) {
+    const client = await ownerPool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SET LOCAL lock_timeout = '200ms'");
+      await client.query("LOCK TABLE tickets, users IN SHARE ROW EXCLUSIVE MODE");
+      await client.query(`LOCK TABLE ${table} IN ACCESS EXCLUSIVE MODE`);
+      await client.query(
+        `CREATE TABLE ${table}_${year}_${mm} PARTITION OF ${table}
+           FOR VALUES FROM ('${month}-01 00:00:00+00') TO ('${next}-01 00:00:00+00')`,
+      );
+      await client.query("COMMIT");
+      return;
+    } catch (err) {
+      await client.query("ROLLBACK");
+      if ((err as { code?: string }).code !== "55P03" || attempt === 200) throw err;
+      await new Promise((resolve) => setTimeout(resolve, 20 + Math.random() * 50));
+    } finally {
+      client.release();
+    }
+  }
 }
 
 async function oldTicket(status: "closed" | "open"): Promise<{ id: string; requester: TestUser }> {
