@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "tsx watch --env-file=../.env src/server.ts",
     "worker": "tsx --env-file=../.env src/workers/main.ts",
+    "realtime": "tsx --env-file=../.env src/realtime/main.ts",
     "migrate": "tsx --env-file=../.env scripts/migrate.ts",
     "seed": "tsx --env-file=../.env scripts/seed.ts",
     "test": "vitest run",

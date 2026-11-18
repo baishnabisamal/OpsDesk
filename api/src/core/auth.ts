@@ -30,6 +30,31 @@ export function signAccessToken(user: TokenUser): string {
   );
 }
 
+// Checks an access token and returns who it belongs to, or null if it is
+// missing, forged, expired or malformed. Used by the HTTP middleware below
+// and by the WebSocket gateway, so both trust exactly the same tokens.
+export function principalFromToken(token: string | undefined): Principal | null {
+  if (!token) return null;
+
+  let payload: unknown;
+  try {
+    // Naming the algorithm stops a token signed some other way being accepted.
+    payload = jwt.verify(token, config.jwtSecret, { algorithms: ["HS256"] });
+  } catch {
+    return null;
+  }
+
+  const claims = claimsSchema.safeParse(payload);
+  if (!claims.success) return null;
+
+  return {
+    userId: claims.data.sub,
+    role: claims.data.role,
+    agencyId: claims.data.agency_id,
+    teamId: claims.data.team_id,
+  };
+}
+
 // Middleware: requires "Authorization: Bearer <token>", checks the signature
 // and expiry, and stores the caller on res.locals for the routes.
 export function authenticate(req: Request, res: Response, next: NextFunction) {
@@ -37,28 +62,10 @@ export function authenticate(req: Request, res: Response, next: NextFunction) {
   if (!header?.startsWith("Bearer ")) {
     throw unauthorized();
   }
-
-  let payload: unknown;
-  try {
-    // Naming the algorithm stops a token signed some other way being accepted.
-    payload = jwt.verify(header.slice("Bearer ".length), config.jwtSecret, {
-      algorithms: ["HS256"],
-    });
-  } catch {
+  const principal = principalFromToken(header.slice("Bearer ".length));
+  if (!principal) {
     throw unauthorized("The access token is invalid or has expired.");
   }
-
-  const claims = claimsSchema.safeParse(payload);
-  if (!claims.success) {
-    throw unauthorized("The access token is invalid or has expired.");
-  }
-
-  const principal: Principal = {
-    userId: claims.data.sub,
-    role: claims.data.role,
-    agencyId: claims.data.agency_id,
-    teamId: claims.data.team_id,
-  };
   res.locals.principal = principal;
   next();
 }

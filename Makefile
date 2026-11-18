@@ -2,7 +2,7 @@ COMPOSE = docker compose --env-file .env -f infra/docker-compose.yml
 
 ML_PYTHON = ml/.venv/bin/python
 
-.PHONY: help setup up down reset ps logs migrate seed dev worker test lint format ml-setup ml-data ml-train ml-dev ml-test
+.PHONY: help setup up down reset ps logs migrate seed dev worker realtime test lint format ml-setup ml-data ml-train ml-dev ml-test
 
 help: ## List the available commands
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F ':.*## ' '{printf "  make %-9s %s\n", $$1, $$2}'
@@ -35,8 +35,11 @@ seed: ## Load the demo data (same data every time)
 dev: ## Start the API and restart it when files change
 	npm run dev
 
-worker: ## Start the background jobs (SLA scan, routing retry, auto-close...)
+worker: ## Start the background jobs (SLA scan, routing retry, auto-close...), outbox relay, email
 	npm run worker
+
+realtime: ## Start the WebSocket gateway on port 3001
+	npm run realtime
 
 test: ## Run the test suite
 	npm test

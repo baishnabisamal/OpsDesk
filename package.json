@@ -12,6 +12,7 @@
   "scripts": {
     "dev": "npm run dev --workspace api",
     "worker": "npm run worker --workspace api",
+    "realtime": "npm run realtime --workspace api",
     "migrate": "npm run migrate --workspace api",
     "seed": "npm run seed --workspace api",
     "test": "npm test --workspace api",
