@@ -92,10 +92,20 @@ function queue(user: TestUser, name: string, query: Record<string, string | numb
     .query({ limit: 100, ...query });
 }
 
+// Every id in a queue, following next_cursor through all the pages. Some
+// queues (triage, intent, linked) hold tickets from every test file, so this
+// file's tickets are not always on the first page.
 async function idsIn(user: TestUser, name: string, query: Record<string, string | number> = {}) {
-  const res = await queue(user, name, query);
-  expect(res.status).toBe(200);
-  return res.body.items.map((ticket: { id: string }) => ticket.id) as string[];
+  const ids: string[] = [];
+  let cursor: string | null = null;
+  for (let page = 0; page < 100; page++) {
+    const res = await queue(user, name, cursor ? { ...query, cursor } : query);
+    expect(res.status).toBe(200);
+    ids.push(...res.body.items.map((ticket: { id: string }) => ticket.id));
+    cursor = res.body.next_cursor;
+    if (!cursor) return ids;
+  }
+  throw new Error("idsIn: too many pages");
 }
 
 describe("queues", () => {
