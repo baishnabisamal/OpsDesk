@@ -266,6 +266,11 @@ describe("append-only data and no deletes", () => {
     await asApp(asRequesterA(), async (db) => {
       expect(await countRows(db, "outbox")).toBe(0);
     });
+    // Make sure there is at least one row to see, whatever other files did.
+    await ownerPool.query(
+      "INSERT INTO outbox (ticket_id, event_type, payload) VALUES ($1, 'test.event', '{}')",
+      [ticketA],
+    );
     await asApp({ role: "system" }, async (db) => {
       expect(await countRows(db, "outbox")).toBeGreaterThan(0);
     });
