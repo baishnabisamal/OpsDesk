@@ -25,6 +25,9 @@ const PERMISSIONS = {
   // Going online or offline for routing.
   "presence:update": STAFF,
   "queue:read": STAFF,
+  // Supplier threads are internal: requesters cannot even see them.
+  "side_conversation:read": STAFF,
+  "side_conversation:write": STAFF,
   "message:read": EVERYONE,
   "message:write_public": EVERYONE,
   "message:write_internal": STAFF,

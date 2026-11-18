@@ -13,7 +13,9 @@ import {
   updateTicketSchema,
 } from "../schemas/tickets.js";
 import { createMessageSchema } from "../schemas/messages.js";
+import { startSideConversationSchema } from "../schemas/sideConversations.js";
 import * as linkService from "../services/linkService.js";
+import * as sideConversationService from "../services/sideConversationService.js";
 import * as messageService from "../services/messageService.js";
 import * as ticketService from "../services/ticketService.js";
 import * as workflowService from "../services/ticketWorkflowService.js";
@@ -180,4 +182,23 @@ ticketsRouter.post("/:id/de-escalate", async (req, res) => {
   const ticket = await workflowService.transitionTicket(getPrincipal(res), id, version, "open");
   setETag(res, ticket.version);
   res.json(ticket);
+});
+
+ticketsRouter.get("/:id/side-conversations", async (req, res) => {
+  const items = await sideConversationService.listSideConversations(
+    getPrincipal(res),
+    parseId(req.params.id),
+  );
+  res.json({ items });
+});
+
+ticketsRouter.post("/:id/side-conversations", async (req, res) => {
+  const id = parseId(req.params.id);
+  const body = startSideConversationSchema.parse(req.body);
+  const conversation = await sideConversationService.startSideConversation(
+    getPrincipal(res),
+    id,
+    body,
+  );
+  res.status(201).location(`/api/v1/side-conversations/${conversation.id}`).json(conversation);
 });

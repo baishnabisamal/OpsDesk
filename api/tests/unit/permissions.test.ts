@@ -21,6 +21,8 @@ const EXPECTED: Record<Action, Actor[]> = {
   "case:read": everyone,
   "presence:update": staff,
   "queue:read": staff,
+  "side_conversation:read": staff,
+  "side_conversation:write": staff,
   "message:read": everyone,
   "message:write_public": everyone,
   "message:write_internal": staff,

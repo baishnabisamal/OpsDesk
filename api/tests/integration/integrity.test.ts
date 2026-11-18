@@ -248,6 +248,9 @@ describe("append-only data and no deletes", () => {
     "intent_overrides",
     "agent_presence",
     "routing_decisions",
+    "side_conversations",
+    "side_participants",
+    "side_messages",
   ])("the app role cannot DELETE from %s", async (table) => {
     await asApp(asAgent(), async (db) => {
       await expectDbError(() => db.query(`DELETE FROM ${table}`), PERMISSION_DENIED);
