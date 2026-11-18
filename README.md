@@ -4,7 +4,7 @@ A travel-aware operations ticketing system. Travel agencies raise tickets about 
 
 **Stack:** PostgreSQL, Express, React, Node (PERN), with Redis for queues and a small Python service for machine learning.
 
-**Status:** Phases 1 to 5 are built and their gate tests pass: the ticket core; intent classification and linkage; SLA, routing, workers and queues; side conversations, outbox relay, email, webhook and WebSockets; weekly themes, streaming export, archival, rate limiting, metrics and contract tests. Phase 6 has its React app (login, queues, ticket page with optimistic changes and version conflicts, cases, insights, live updates); load tests and CI are still to come. Measured so far: a 100,000-row export streams in 4.8 s with live heap growth of 3.1 MB; Schemathesis found no 500s in 7,821 generated requests. The intent model is trained on synthetic tickets, so its macro-F1 (0.997) shows the pipeline works, not real-world quality. Request latency figures are still targets: no load test has been run yet.
+**Status:** all six phases are built and their gate tests pass: the ticket core; intent classification and linkage; SLA, routing, workers and queues; side conversations, outbox relay, email, webhook and WebSockets; weekly themes, streaming export, archival, rate limiting, metrics and contract tests; and the React app with real sign-up, email verification, password reset and staff invitations, k6 load tests and CI. Measured: reads p95 10.9 ms at 50 requests per second and ticket create p95 68.9 ms, over 200,000 tickets ([docs/load-test.md](docs/load-test.md)); a 100,000-row export streams in 4.8 s with live heap growth of 3.1 MB; Schemathesis found no 500s in 7,821 generated requests. The intent model is trained on synthetic tickets, so its macro-F1 (0.997) shows the pipeline works, not real-world quality. To see it, follow [docs/demo.md](docs/demo.md).
 
 ## Contents
 
@@ -116,12 +116,12 @@ OpsDesk uses these to compute deadlines: a ticket must be answered before the bo
 
 ### Non-functional targets
 
-| Property | Target |
-|---|---|
-| Read latency | p95 under 150 ms at 50 requests per second on a laptop |
-| Ticket create (classify, link, route included) | p95 under 300 ms |
-| Export | 100,000 rows streamed in under 30 s with flat memory |
-| Realtime | A state change reaches connected clients within 2 s |
+| Property | Target | Measured |
+|---|---|---|
+| Read latency | p95 under 150 ms at 50 requests per second on a laptop | 10.9 ms over 200,000 tickets (k6) |
+| Ticket create (classify, link, route included) | p95 under 300 ms | 68.9 ms at 5 per second, ML included (k6) |
+| Export | 100,000 rows streamed in under 30 s with flat memory | 4.8 s, live heap +3.1 MB |
+| Realtime | A state change reaches connected clients within 2 s | under 2 s (test); about 220 ms in a browser |
 | Correctness | No duplicate ticket from a retry; no lost update; no agent above their cap; no cross-agency read |
 | Durability | A committed change is never lost, and its event is never silently dropped |
 | Availability of create | Ticket create keeps working when the ML service, Redis or email is down |
@@ -235,7 +235,7 @@ A rule lives in exactly one layer. Pure rules in `domain/` are tested with no da
 
 | Concern | Choice | Why |
 |---|---|---|
-| Language | TypeScript on Node 22 | One language for API, workers and UI; types catch mistakes in request and row shapes |
+| Language | TypeScript on Node 22 or newer | One language for API, workers and UI; types catch mistakes in request and row shapes |
 | HTTP | Express 5 | Small and well understood; middleware fits auth, idempotency and rate limiting |
 | Validation | Zod | One schema validates the request and generates the OpenAPI document |
 | Database | PostgreSQL 16 | Transactions, constraints, row locks, Row-Level Security, partitioning, full-text search |
@@ -248,6 +248,7 @@ A rule lives in exactly one layer. Pure rules in `domain/` are tested with no da
 | Email | Nodemailer to Mailpit | Real SMTP behaviour with nothing leaving the machine |
 | Files | MinIO | S3-compatible storage for exports and archives |
 | Frontend | React, Vite, TanStack Query | Server state with caching and refetching handled for us |
+| Accounts | Own, in PostgreSQL: argon2id, JWT plus rotating refresh tokens, hashed email-link tokens | Users are referenced by foreign keys and RLS; a hosted identity provider would live outside the database ([ADR 0003](docs/adr/0003-own-auth-in-postgres.md)) |
 | Tests | Vitest, Supertest, Testcontainers, fast-check | Real PostgreSQL in tests; property tests for date maths |
 | Observability | pino, prom-client, OpenTelemetry, Grafana | Logs, metrics and traces tied together by a request id |
 | Load and contract | k6, Schemathesis | Measured latency; the API is checked against its own specification |
@@ -639,6 +640,8 @@ Filtering only in application code works until one query forgets `WHERE agency_i
 |---|---|
 | SQL injection | Parameterised queries only; no string-built SQL |
 | Mass assignment | Zod schemas reject unknown fields; the server sets `agency_id`, `requester_id` and `status`, never the client |
+| Account takeover by email link | Links carry 32 random bytes; only the SHA-256 is stored; single use; one live link per person and purpose; reset expires in 1 hour and ends every session |
+| Account enumeration | Sign-up, "forgot password" and "resend" answer the same 202 for known and unknown addresses, and send the email without waiting, so the timing is the same; the email says what happened |
 | Forged inbound email | HMAC signature with a shared secret, compared in constant time, with a timestamp to stop replays |
 | Abuse and scraping | Token-bucket rate limits in Redis per user and per agency; `429` with `Retry-After` |
 | Leaked secrets | Secrets only in environment variables; `.env` is git-ignored; a pre-commit hook scans for secrets; the app refuses to start with a missing or short secret |
@@ -657,6 +660,9 @@ REST over JSON under `/api/v1`. The OpenAPI document is generated from the Zod s
 | Method and path | Purpose | Phase |
 |---|---|---|
 | `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout` | Sessions | 1 |
+| `POST /auth/signup`, `POST /auth/verify-email`, `POST /auth/verify-email/resend` | Agency sign-up and email verification | 6 |
+| `POST /auth/password/forgot`, `POST /auth/password/reset` | Forgotten password (ends every session) | 6 |
+| `POST /staff/invites`, `POST /auth/invites/accept` | Leads invite staff; staff never sign up themselves | 6 |
 | `POST /tickets` | Create (requires `Idempotency-Key`) | 1 |
 | `GET /tickets` | List with filters, search and cursor paging | 1 |
 | `GET /tickets/{id}` | Detail, with `ETag` | 1 |
@@ -879,11 +885,15 @@ Done when this README is complete and reviewed.
 
 **Gate:** read p95 under 150 ms and create p95 under 300 ms on a laptop, or this README states the real numbers and the reason.
 
+**Result:** met. Reads p95 10.9 ms at 50 per second, creates p95 68.9 ms at 5 per second, over 200,000 tickets with the ML service running. The single API process saturates at about 1,730 reads per second; every endpoint slowed equally there, which points at the one Node.js process rather than the database. Details in [docs/load-test.md](docs/load-test.md).
+
+Built in Phase 6 beyond the plan: real accounts (agency sign-up with email verification, password reset, staff invitations), because a demo with only seeded logins is not a product.
+
 ---
 
 ## 19. Repository layout
 
-Planned. Folders appear in the phase that needs them.
+Folders appear in the phase that needs them.
 
 ```
 api/
@@ -899,11 +909,14 @@ api/
   migrations/     numbered SQL files
   tests/          unit/ and integration/
 ml/               Python service: API, training script, tests
-web/              React app
-seed/             demo data generator
-load/             k6 scripts
+web/              React app (Vite, TanStack Query)
+load/             k6 scripts and the bulk fill for the load database
+tools/            contract.sh (Schemathesis), load.sh (k6)
 infra/            docker-compose.yml, Prometheus and Grafana config
 docs/adr/         one short decision record per major choice
+docs/demo.md      a 10-minute demo script
+docs/load-test.md measured latency and where the limit is
+.github/workflows CI: lint, API tests, web tests and build, ML tests
 ```
 
 ### How this project is built
