@@ -156,6 +156,7 @@ describe("the job runner (BullMQ on a real Redis)", () => {
 
   it("every real job has an interval and a function", () => {
     expect(Object.keys(JOBS).sort()).toEqual([
+      "archival",
       "auto-close",
       "idempotency-cleanup",
       "load-reconciliation",

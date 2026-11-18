@@ -46,6 +46,11 @@ const envSchema = z.object({
   // Shared with the mail provider; signs every inbound webhook request.
   INBOUND_WEBHOOK_SECRET: z.string().min(32, "must be at least 32 characters"),
 
+  // Where archive files go, and how many whole months of ticket history stay
+  // in PostgreSQL before a month is archived.
+  ARCHIVE_DIR: z.string().min(1).default("../var/archive"),
+  ARCHIVE_RETENTION_MONTHS: z.coerce.number().int().min(1).default(12),
+
   // The Python ML service. Ticket create never waits longer than the timeout.
   ML_URL: z.string().url().default("http://127.0.0.1:8001"),
   ML_SHARED_SECRET: z.string().min(16, "must be at least 16 characters"),
@@ -82,6 +87,8 @@ export function loadConfig(env: Record<string, string | undefined>) {
     redis: { host: e.REDIS_HOST, port: e.REDIS_PORT },
     autoCloseAfterHours: e.AUTO_CLOSE_AFTER_HOURS,
     inboundWebhookSecret: e.INBOUND_WEBHOOK_SECRET,
+    archiveDir: e.ARCHIVE_DIR,
+    archiveRetentionMonths: e.ARCHIVE_RETENTION_MONTHS,
     mail: {
       smtpHost: e.SMTP_HOST,
       smtpPort: e.SMTP_PORT,

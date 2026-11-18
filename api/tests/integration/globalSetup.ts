@@ -1,3 +1,6 @@
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { GenericContainer, Wait, type StartedTestContainer } from "testcontainers";
 import type { TestProject } from "vitest/node";
@@ -34,6 +37,8 @@ export async function setup(project: TestProject) {
   process.env.APP_DB_PASSWORD = "app-test-password";
   process.env.JWT_SECRET = "test-secret-test-secret-test-secret-123";
   process.env.INBOUND_WEBHOOK_SECRET = "test-inbound-webhook-secret-0123456789";
+  // A fresh, empty archive directory for each test run.
+  process.env.ARCHIVE_DIR = await mkdtemp(path.join(tmpdir(), "opsdesk-archive-"));
 
   // A throwaway Redis for the job queue tests.
   redis = await new GenericContainer("redis:7-alpine").withExposedPorts(6379).start();

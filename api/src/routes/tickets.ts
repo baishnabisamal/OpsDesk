@@ -14,6 +14,7 @@ import {
 } from "../schemas/tickets.js";
 import { createMessageSchema } from "../schemas/messages.js";
 import { startSideConversationSchema } from "../schemas/sideConversations.js";
+import * as archiveService from "../services/archiveService.js";
 import * as linkService from "../services/linkService.js";
 import * as sideConversationService from "../services/sideConversationService.js";
 import * as messageService from "../services/messageService.js";
@@ -201,4 +202,10 @@ ticketsRouter.post("/:id/side-conversations", async (req, res) => {
     body,
   );
   res.status(201).location(`/api/v1/side-conversations/${conversation.id}`).json(conversation);
+});
+
+// Timeline events of months that have been archived out of the database.
+ticketsRouter.get("/:id/archived-timeline", async (req, res) => {
+  const items = await archiveService.archivedTimeline(getPrincipal(res), parseId(req.params.id));
+  res.json({ items });
 });

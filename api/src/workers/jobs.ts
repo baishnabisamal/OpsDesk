@@ -5,6 +5,8 @@ import {
   reconcileLoad,
 } from "../services/maintenanceService.js";
 import { retryRouting } from "../services/routingService.js";
+import { archiveOldPartitions } from "../services/archiveService.js";
+import { config } from "../core/config.js";
 import { scanSla } from "../services/slaScanService.js";
 import { rollupRecentWeeks } from "../services/themeService.js";
 
@@ -35,4 +37,8 @@ export const JOBS: Record<string, JobDefinition> = {
   "load-reconciliation": { everyMs: DAY, run: () => reconcileLoad() },
   "idempotency-cleanup": { everyMs: DAY, run: () => purgeIdempotencyKeys() },
   "theme-rollup": { everyMs: DAY, run: () => rollupRecentWeeks() },
+  archival: {
+    everyMs: DAY,
+    run: () => archiveOldPartitions({ retentionMonths: config.archiveRetentionMonths }),
+  },
 };

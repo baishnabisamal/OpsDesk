@@ -61,6 +61,7 @@ const ROUTE_BODIES: Record<string, object | null> = {
   "GET /:id/timeline": null,
   "POST /:id/escalate": null,
   "POST /:id/de-escalate": null,
+  "GET /:id/archived-timeline": null,
   "GET /:id/side-conversations": null,
   "POST /:id/side-conversations": {
     subject: "Hello",
