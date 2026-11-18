@@ -5,6 +5,7 @@ import {
   reconcileLoad,
 } from "../services/maintenanceService.js";
 import { retryRouting } from "../services/routingService.js";
+import { scanSla } from "../services/slaScanService.js";
 
 // The list of scheduled jobs: a name, how often it runs, and the function.
 //
@@ -26,6 +27,7 @@ const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 
 export const JOBS: Record<string, JobDefinition> = {
+  "sla-scan": { everyMs: MINUTE, run: () => scanSla() },
   "routing-retry": { everyMs: 2 * MINUTE, run: () => retryRouting() },
   "auto-close": { everyMs: HOUR, run: () => autoCloseResolved() },
   "partition-maintenance": { everyMs: DAY, run: () => ensurePartitions() },
