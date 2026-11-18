@@ -143,12 +143,19 @@ export function apiRules(): RateRule[] {
   const limits = config.rateLimit;
   return [
     {
-      // Slows down password guessing: per IP address, on login only.
+      // Slows down password guessing, mass sign-ups and email flooding: per
+      // IP address, on every POST /auth/* that a stranger can call except
+      // refresh and logout (those need a valid token anyway).
       name: "login",
       capacity: limits.loginCapacity,
       perSecond: limits.loginPerSecond,
       key: (req) =>
-        req.method === "POST" && req.path === "/auth/login" ? (req.ip ?? "unknown") : null,
+        req.method === "POST" &&
+        req.path.startsWith("/auth/") &&
+        req.path !== "/auth/refresh" &&
+        req.path !== "/auth/logout"
+          ? (req.ip ?? "unknown")
+          : null,
     },
     {
       name: "user",

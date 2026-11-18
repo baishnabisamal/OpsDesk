@@ -264,9 +264,11 @@ export async function seed(
     ): Promise<SeedUser> => {
       const id = seededUuid();
       await client.query(
-        `INSERT INTO users (id, email, password_hash, full_name, role, agency_id, team_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING`,
-        [id, email, passwordHash, name, role, agencyId, teamId],
+        `INSERT INTO users (id, email, password_hash, full_name, role, agency_id, team_id,
+                            email_verified_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING`,
+        // Demo accounts are made by the seed, not by sign-up: already verified.
+        [id, email, passwordHash, name, role, agencyId, teamId, BASE_DATE],
       );
       return { id, name };
     };

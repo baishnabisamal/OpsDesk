@@ -5,7 +5,15 @@ import { inboundEmailSchema } from "./routes/inbound.js";
 import { themesQuerySchema } from "./routes/insights.js";
 import { presenceSchema } from "./routes/me.js";
 import { queueQuerySchema } from "./routes/queues.js";
-import { loginSchema, refreshSchema } from "./schemas/auth.js";
+import {
+  emailOnlySchema,
+  inviteSchema,
+  loginSchema,
+  refreshSchema,
+  setPasswordSchema,
+  signupSchema,
+  tokenOnlySchema,
+} from "./schemas/auth.js";
 import { createMessageSchema } from "./schemas/messages.js";
 import { sideMessageSchema, startSideConversationSchema } from "./schemas/sideConversations.js";
 import {
@@ -139,6 +147,54 @@ const PATHS: Record<string, Record<string, Operation>> = {
       security: false,
       body: refreshSchema,
       responses: responses({ "204": { description: "Logged out" } }),
+    },
+  },
+  "/api/v1/auth/signup": {
+    post: {
+      summary: "Sign up a new agency and its first user; sends a verification email",
+      security: false,
+      body: signupSchema,
+      responses: responses({ "202": json("Check your email") }),
+    },
+  },
+  "/api/v1/auth/verify-email": {
+    post: {
+      summary: "Use the emailed link; signs the user in",
+      security: false,
+      body: tokenOnlySchema,
+      responses: responses({ "200": json("Session") }),
+    },
+  },
+  "/api/v1/auth/verify-email/resend": {
+    post: {
+      summary: "Send the verification link again",
+      security: false,
+      body: emailOnlySchema,
+      responses: responses({ "202": json("Check your email") }),
+    },
+  },
+  "/api/v1/auth/password/forgot": {
+    post: {
+      summary: "Email a password reset link",
+      security: false,
+      body: emailOnlySchema,
+      responses: responses({ "202": json("Check your email") }),
+    },
+  },
+  "/api/v1/auth/password/reset": {
+    post: {
+      summary: "Set a new password with the emailed link; ends every session",
+      security: false,
+      body: setPasswordSchema,
+      responses: responses({ "204": { description: "Password changed" } }),
+    },
+  },
+  "/api/v1/auth/invites/accept": {
+    post: {
+      summary: "Accept a staff invitation by choosing a password; signs the user in",
+      security: false,
+      body: setPasswordSchema,
+      responses: responses({ "200": json("Session") }),
     },
   },
   "/api/v1/tickets": {
@@ -320,6 +376,13 @@ const PATHS: Record<string, Record<string, Operation>> = {
     get: {
       summary: "Staff directory with team and load (staff)",
       responses: responses({ "200": json("Staff", items()) }),
+    },
+  },
+  "/api/v1/staff/invites": {
+    post: {
+      summary: "Invite a member of staff by email (leads)",
+      body: inviteSchema,
+      responses: responses({ "201": json("Invitation") }),
     },
   },
   "/api/v1/insights/themes": {

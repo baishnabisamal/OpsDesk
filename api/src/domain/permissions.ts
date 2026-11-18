@@ -31,6 +31,8 @@ const PERMISSIONS = {
   // Leads see insights and run exports (README section 1).
   "insights:read": ["lead"],
   "export:run": ["lead"],
+  // Leads add staff by email invitation (Phase 6).
+  "staff:invite": ["lead"],
   "message:read": EVERYONE,
   "message:write_public": EVERYONE,
   "message:write_internal": STAFF,

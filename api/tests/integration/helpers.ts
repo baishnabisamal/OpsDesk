@@ -81,8 +81,8 @@ export async function createUser(
   const teamId = options.teamId ?? null;
 
   const result = await ownerPool.query<{ id: string }>(
-    `INSERT INTO users (email, password_hash, full_name, role, agency_id, team_id)
-     VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+    `INSERT INTO users (email, password_hash, full_name, role, agency_id, team_id, email_verified_at)
+     VALUES ($1, $2, $3, $4, $5, $6, now()) RETURNING id`,
     [email, await passwordHash, `Test ${role}`, role, agencyId, teamId],
   );
   const id = result.rows[0]!.id;

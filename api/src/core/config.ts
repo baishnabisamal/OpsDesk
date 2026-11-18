@@ -40,6 +40,8 @@ const envSchema = z.object({
   SMTP_HOST: z.string().min(1).default("127.0.0.1"),
   SMTP_PORT: z.coerce.number().int().default(1025),
   MAIL_FROM: z.string().min(3).default("OpsDesk Support <support@opsdesk.local>"),
+  // Where the web app runs. Links in account emails point here.
+  APP_URL: z.string().url().default("http://localhost:5173"),
   // Replies to supplier threads go to reply+<thread id>@this domain, and the
   // mail provider posts them to the inbound webhook.
   INBOUND_DOMAIN: z.string().min(3).default("inbound.opsdesk.local"),
@@ -110,6 +112,7 @@ export function loadConfig(env: Record<string, string | undefined>) {
       smtpHost: e.SMTP_HOST,
       smtpPort: e.SMTP_PORT,
       from: e.MAIL_FROM,
+      appUrl: e.APP_URL.replace(/\/$/, ""),
       inboundDomain: e.INBOUND_DOMAIN,
     },
     ml: {

@@ -3,7 +3,7 @@ import argon2 from "argon2";
 import type { PoolClient } from "pg";
 import { signAccessToken, type TokenUser } from "../core/auth.js";
 import { config } from "../core/config.js";
-import { unauthorized } from "../core/errors.js";
+import { AppError, unauthorized } from "../core/errors.js";
 import { tx } from "../db/tx.js";
 import { SYSTEM_PRINCIPAL, type Role } from "../domain/enums.js";
 
@@ -17,9 +17,11 @@ type UserRow = {
   agency_id: string | null;
   team_id: string | null;
   password_hash: string;
+  email_verified_at: Date | null;
 };
 
-const USER_COLUMNS = "id, email, full_name, role, agency_id, team_id, password_hash";
+const USER_COLUMNS =
+  "id, email, full_name, role, agency_id, team_id, password_hash, email_verified_at";
 
 export function hashPassword(password: string): Promise<string> {
   return argon2.hash(password, { type: argon2.argon2id });
@@ -27,7 +29,7 @@ export function hashPassword(password: string): Promise<string> {
 
 // Only the SHA-256 hash of a refresh token is stored. If the table leaks,
 // the hashes cannot be used to log in.
-function hashToken(token: string): string {
+export function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
@@ -53,7 +55,10 @@ async function issueRefreshToken(
   return token;
 }
 
-function buildSession(user: UserRow, refreshToken: string) {
+function buildSession(
+  user: Omit<UserRow, "password_hash" | "email_verified_at">,
+  refreshToken: string,
+) {
   const tokenUser: TokenUser = {
     id: user.id,
     role: user.role,
@@ -93,7 +98,23 @@ export async function login(email: string, password: string) {
     throw unauthorized("Email or password is incorrect.");
   }
 
-  // Step 2: start a new token family for this login.
+  // Checked only after the password, so this answer does not reveal to a
+  // stranger whether an email address has an account.
+  if (!user.email_verified_at) {
+    throw new AppError(
+      403,
+      "email_not_verified",
+      "Email not verified",
+      "Confirm your email address first. We can send the link again.",
+    );
+  }
+
+  return startSession(user);
+}
+
+// Step 2 of a login, also used right after verifying an email or accepting
+// an invitation: start a new token family and hand out the first pair.
+export async function startSession(user: Omit<UserRow, "password_hash" | "email_verified_at">) {
   const refreshToken = await tx(SYSTEM_PRINCIPAL, (db) =>
     issueRefreshToken(db, user.id, randomUUID()),
   );
