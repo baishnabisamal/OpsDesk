@@ -4,7 +4,7 @@ A travel-aware operations ticketing system. Travel agencies raise tickets about 
 
 **Stack:** PostgreSQL, Express, React, Node (PERN), with Redis for queues and a small Python service for machine learning.
 
-**Status:** Phases 1 to 5 are built and their gate tests pass: the ticket core; intent classification and linkage; SLA, routing, workers and queues; side conversations, outbox relay, email, webhook and WebSockets; weekly themes, streaming export, archival, rate limiting, metrics and contract tests. Phase 6 (UI, load tests, CI) is still design only. Measured so far: a 100,000-row export streams in 4.8 s with live heap growth of 3.1 MB; Schemathesis found no 500s in 7,821 generated requests. The intent model is trained on synthetic tickets, so its macro-F1 (0.997) shows the pipeline works, not real-world quality. Request latency figures are still targets: no load test has been run yet.
+**Status:** Phases 1 to 5 are built and their gate tests pass: the ticket core; intent classification and linkage; SLA, routing, workers and queues; side conversations, outbox relay, email, webhook and WebSockets; weekly themes, streaming export, archival, rate limiting, metrics and contract tests. Phase 6 has its React app (login, queues, ticket page with optimistic changes and version conflicts, cases, insights, live updates); load tests and CI are still to come. Measured so far: a 100,000-row export streams in 4.8 s with live heap growth of 3.1 MB; Schemathesis found no 500s in 7,821 generated requests. The intent model is trained on synthetic tickets, so its macro-F1 (0.997) shows the pipeline works, not real-world quality. Request latency figures are still targets: no load test has been run yet.
 
 ## Contents
 
@@ -675,6 +675,7 @@ REST over JSON under `/api/v1`. The OpenAPI document is generated from the Zod s
 | `POST /inbound/email` | Signed webhook for replies | 4 |
 | `GET /insights/themes` | Weekly themes | 5 |
 | `GET /exports/tickets.csv`, `POST /exports` | Streaming and background export | 5 |
+| `GET /staff` | Staff directory with team and load, for the UI | 6 |
 | `GET /healthz`, `GET /readyz`, `GET /metrics` | Operations | 1, 5 |
 
 ### Conventions

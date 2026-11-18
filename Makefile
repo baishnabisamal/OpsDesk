@@ -4,7 +4,7 @@ ML_PYTHON = ml/.venv/bin/python
 
 OBSERVE = $(COMPOSE) --profile observability
 
-.PHONY: help setup up observe down reset ps logs migrate seed dev worker realtime test test-perf contract lint format ml-setup ml-data ml-train ml-dev ml-test
+.PHONY: help setup up observe down reset ps logs migrate seed dev worker realtime web test test-perf contract lint format ml-setup ml-data ml-train ml-dev ml-test
 
 help: ## List the available commands
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F ':.*## ' '{printf "  make %-9s %s\n", $$1, $$2}'
@@ -46,7 +46,10 @@ worker: ## Start the background jobs (SLA scan, routing retry, auto-close...), o
 realtime: ## Start the WebSocket gateway on port 3001
 	npm run realtime
 
-test: ## Run the test suite
+web: ## Start the React app on port 5173 (needs make dev; make realtime for live updates)
+	npm run web
+
+test: ## Run the test suite (API, then web)
 	npm test
 
 test-perf: ## Measure the 100,000-row export (slow)
