@@ -1,0 +1,182 @@
+# OpsDesk on one server. Every part of the system runs in its own container:
+#
+#   internet --443--> web (Caddy) --> api (3000)       --> postgres, redis, ml
+#                                 \-> realtime (3001)  --> redis
+#                     worker (no port)                  --> postgres, redis, SMTP
+#
+# Only Caddy publishes ports. PostgreSQL, Redis and the ML service are on the
+# private Docker network and cannot be reached from outside.
+#
+# Settings come from deploy/.env (start from deploy/.env.example, or run
+# deploy/init-env.sh). Start or update everything with deploy/update.sh.
+#
+# "opsdesk-prod", not "opsdesk": the local dev compose (infra/) is called
+# opsdesk, and the same name would share its database volume.
+name: opsdesk-prod
+
+# Shared pieces, reused below with YAML anchors (&name ... *name).
+x-logging: &logging # Docker keeps container logs forever by default and can fill the disk.
+  driver: json-file
+  options: { max-size: "10m", max-file: "5" }
+
+x-api-image: &api-image
+  image: opsdesk-api:latest
+  build:
+    context: ..
+    dockerfile: deploy/api.Dockerfile
+
+x-node-env: &node-env
+  NODE_ENV: production
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  POSTGRES_HOST: postgres
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: ${POSTGRES_DB}
+  POSTGRES_USER: ${POSTGRES_USER}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+  APP_DB_USER: opsdesk_app
+  APP_DB_PASSWORD: ${APP_DB_PASSWORD}
+  JWT_SECRET: ${JWT_SECRET}
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+  ML_URL: http://ml:8001
+  ML_SHARED_SECRET: ${ML_SHARED_SECRET}
+  ML_TIMEOUT_MS: ${ML_TIMEOUT_MS:-150}
+  SMTP_HOST: ${SMTP_HOST}
+  SMTP_PORT: ${SMTP_PORT}
+  SMTP_USER: ${SMTP_USER:-}
+  SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+  SMTP_SECURE: ${SMTP_SECURE:-false}
+  MAIL_FROM: ${MAIL_FROM}
+  APP_URL: ${APP_URL}
+  INBOUND_DOMAIN: ${INBOUND_DOMAIN:-inbound.opsdesk.local}
+  INBOUND_WEBHOOK_SECRET: ${INBOUND_WEBHOOK_SECRET}
+  ARCHIVE_DIR: /data/archive
+  # One proxy (Caddy) in front of the API: see TRUST_PROXY in core/config.ts.
+  TRUST_PROXY: "1"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging: *logging
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # appendonly: queued jobs and unread stream events survive a restart.
+    # noeviction: when memory is full Redis refuses writes instead of quietly
+    # deleting keys, which for BullMQ would mean losing jobs.
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging: *logging
+
+  ml:
+    build: ../ml
+    image: opsdesk-ml:latest
+    restart: unless-stopped
+    environment:
+      ML_SHARED_SECRET: ${ML_SHARED_SECRET}
+    logging: *logging
+
+  # Runs once on every start: applies new SQL migrations as the owner role and
+  # sets the app role's password, then exits. The Node services wait for it.
+  migrate:
+    <<: *api-image
+    command: ["node", "dist/scripts/migrate.js"]
+    environment: *node-env
+    restart: "no"
+    depends_on:
+      postgres: { condition: service_healthy }
+    logging: *logging
+
+  api:
+    <<: *api-image
+    command: ["node", "--enable-source-maps", "dist/src/server.js"]
+    restart: unless-stopped
+    environment: *node-env
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+      ml: { condition: service_started }
+    healthcheck:
+      # /readyz checks PostgreSQL and Redis too, not only that Node is alive.
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://localhost:3000/readyz').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging: *logging
+
+  worker:
+    <<: *api-image
+    command: ["node", "--enable-source-maps", "dist/src/workers/main.js"]
+    restart: unless-stopped
+    environment: *node-env
+    volumes:
+      - archive:/data/archive
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    logging: *logging
+
+  realtime:
+    <<: *api-image
+    command: ["node", "--enable-source-maps", "dist/src/realtime/main.js"]
+    restart: unless-stopped
+    environment: *node-env
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    logging: *logging
+
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/web.Dockerfile
+      args:
+        VITE_DEMO_LOGINS: ${DEMO_LOGINS:-false}
+    image: opsdesk-web:latest
+    restart: unless-stopped
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # HTTP/3
+    volumes:
+      # The HTTPS certificate and key. Kept, so a restart does not ask
+      # Let's Encrypt for a new certificate (it limits how often you may).
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api: { condition: service_healthy }
+      realtime: { condition: service_started }
+    logging: *logging
+
+volumes:
+  pgdata:
+  redisdata:
+  archive:
+  caddy_data:
+  caddy_config:

@@ -4,7 +4,7 @@ A travel-aware operations ticketing system. Travel agencies raise tickets about 
 
 **Stack:** PostgreSQL, Express, React, Node (PERN), with Redis for queues and a small Python service for machine learning.
 
-**Status:** all six phases are built and their gate tests pass: the ticket core; intent classification and linkage; SLA, routing, workers and queues; side conversations, outbox relay, email, webhook and WebSockets; weekly themes, streaming export, archival, rate limiting, metrics and contract tests; and the React app with real sign-up, email verification, password reset and staff invitations, k6 load tests and CI. Measured: reads p95 10.9 ms at 50 requests per second and ticket create p95 68.9 ms, over 200,000 tickets ([docs/load-test.md](docs/load-test.md)); a 100,000-row export streams in 4.8 s with live heap growth of 3.1 MB; Schemathesis found no 500s in 7,821 generated requests. The intent model is trained on synthetic tickets, so its macro-F1 (0.997) shows the pipeline works, not real-world quality. To see it, follow [docs/demo.md](docs/demo.md).
+**Status:** all six phases are built and their gate tests pass: the ticket core; intent classification and linkage; SLA, routing, workers and queues; side conversations, outbox relay, email, webhook and WebSockets; weekly themes, streaming export, archival, rate limiting, metrics and contract tests; and the React app with real sign-up, email verification, password reset and staff invitations, k6 load tests and CI. Measured: reads p95 10.9 ms at 50 requests per second and ticket create p95 68.9 ms, over 200,000 tickets ([docs/load-test.md](docs/load-test.md)); a 100,000-row export streams in 4.8 s with live heap growth of 3.1 MB; Schemathesis found no 500s in 7,821 generated requests. The intent model is trained on synthetic tickets, so its macro-F1 (0.997) shows the pipeline works, not real-world quality. To see it, follow [docs/demo.md](docs/demo.md). To run it on a server, follow [docs/deploy.md](docs/deploy.md).
 
 ## Contents
 
@@ -912,11 +912,13 @@ ml/               Python service: API, training script, tests
 web/              React app (Vite, TanStack Query)
 load/             k6 scripts and the bulk fill for the load database
 tools/            contract.sh (Schemathesis), load.sh (k6)
-infra/            docker-compose.yml, Prometheus and Grafana config
+infra/            docker-compose.yml for local dependencies, Prometheus and Grafana config
+deploy/           production: Dockerfiles, Caddy, compose, setup, update and backup scripts
 docs/adr/         one short decision record per major choice
 docs/demo.md      a 10-minute demo script
 docs/load-test.md measured latency and where the limit is
-.github/workflows CI: lint, API tests, web tests and build, ML tests
+docs/deploy.md    how to run it on one server with HTTPS
+.github/workflows CI: lint, API tests, web tests and build, ML tests, deployment smoke test
 ```
 
 ### How this project is built

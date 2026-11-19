@@ -1,0 +1,19 @@
+# Keep the Docker build context small and free of secrets.
+.git
+**/node_modules
+**/dist
+**/.venv
+**/__pycache__
+**/.pytest_cache
+ml/models
+var
+exports
+.env
+.env.*
+!.env.example
+deploy/.env
+CLAUDE.md
+NOTES.md
+*.ipynb
+load
+docs

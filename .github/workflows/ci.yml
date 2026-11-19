@@ -78,3 +78,50 @@ jobs:
       - run: pip install -r requirements.txt
       # The tests train a small model on generated data in a temp folder.
       - run: python -m pytest -q
+
+  deploy:
+    name: Deployment stack builds, starts and answers
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      # The same script a real server uses, then two changes for a runner:
+      # plain HTTP on localhost (no certificate), and no real mail provider.
+      - name: Create deploy/.env
+        run: |
+          ./deploy/init-env.sh localhost
+          sed -i \
+            -e 's|^SITE_ADDRESS=.*|SITE_ADDRESS=http://localhost|' \
+            -e 's|^APP_URL=.*|APP_URL=http://localhost|' \
+            -e 's|^SMTP_HOST=.*|SMTP_HOST=127.0.0.1|' \
+            -e 's|^SMTP_PORT=.*|SMTP_PORT=1025|' \
+            deploy/.env
+      - name: Build and start every container
+        run: docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d --build --wait
+      - name: Smoke test through Caddy
+        run: |
+          set -euo pipefail
+          compose() { docker compose --env-file deploy/.env -f deploy/docker-compose.yml "$@"; }
+          status() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
+
+          # The API is up and can reach PostgreSQL and Redis.
+          curl -fsS http://localhost/readyz
+          # The React app, and its fallback for a deep link.
+          curl -fsS http://localhost/ | grep -q '<div id="root">'
+          curl -fsS http://localhost/tickets/123 | grep -q '<div id="root">'
+          # Metrics stay internal.
+          test "$(status http://localhost/metrics)" = 404
+          # The WebSocket gateway answers its handshake.
+          curl -fsS 'http://localhost/socket.io/?EIO=4&transport=polling' | grep -q '"sid"'
+
+          # Demo data, then a real sign-in and an authenticated read.
+          compose run --rm migrate node dist/scripts/seed.js
+          token=$(curl -fsS http://localhost/api/v1/auth/login \
+            -H 'Content-Type: application/json' \
+            -d '{"email":"user1@skyline-travels.test","password":"Password123!"}' \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')
+          curl -fsS http://localhost/api/v1/tickets -H "Authorization: Bearer $token" | grep -q '"items"'
+          echo "smoke test passed"
+      - name: Container logs
+        if: failure()
+        run: docker compose --env-file deploy/.env -f deploy/docker-compose.yml logs --tail 100
