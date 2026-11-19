@@ -9,6 +9,10 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
+    // npm workspaces install packages (the fonts too) in the repository's
+    // node_modules, one level up. Allow it explicitly, or the dev server
+    // answers 403 for the font files.
+    fs: { allow: [".."] },
     proxy: {
       "/api": "http://127.0.0.1:3000",
       "/healthz": "http://127.0.0.1:3000",

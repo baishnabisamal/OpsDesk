@@ -1,0 +1,1035 @@
+/* The public landing page. Same identity as the app (styles.css): warm paper,
+   black ink, hairlines, one signal colour, Instrument Serif headings with
+   IBM Plex for reading. Values measured for contrast are noted beside them. */
+
+.lp {
+  --lp-ground: var(--paper);
+  --lp-surface: var(--sheet);
+  --lp-ink: var(--ink);
+  --lp-ink-2: var(--ink-2); /* 6.83:1 on paper */
+  --lp-muted: #6f685d; /* 4.80:1 on paper (the app's --ink-3 is 3.31:1) */
+  --lp-rule: var(--rule);
+  /* The signal, deep enough to carry a label: sheet on it is 5.49:1. */
+  --lp-action: #b53d0c;
+  --lp-action-hover: #9c340a;
+  --lp-action-label: #fbf9f4;
+  /* The film is always ink. Paper on it 14.1:1; the bright signal 5.63:1. */
+  --film-ground: #1c1a16;
+  --film-ink: #ede7dc;
+  --film-ink-2: #b0a796;
+  --film-signal: #f06a2e;
+  --film-rule: #3a3530;
+
+  --lp-wrap: 1200px;
+  --lp-gutter: 24px;
+
+  background: var(--lp-ground);
+  color: var(--lp-ink);
+  font-family: var(--font-text);
+  font-size: 16px;
+  line-height: 1.55;
+}
+
+@media (prefers-color-scheme: dark) {
+  .lp {
+    --lp-muted: #9a9182;
+    --lp-action: #f06a2e;
+    --lp-action-hover: #ff7d42;
+    --lp-action-label: #161412;
+    --film-ground: #1f1c18;
+    --film-rule: #3d3832;
+  }
+}
+
+/* The app's own layout gives <main> padding; the landing page sets its own. */
+.lp main {
+  padding: 0;
+}
+
+.lp ::selection {
+  background: var(--signal);
+  color: #fbf9f4;
+}
+
+.lp-wrap {
+  width: 100%;
+  max-width: calc(var(--lp-wrap) + 2 * var(--lp-gutter));
+  margin: 0 auto;
+  padding: 0 var(--lp-gutter);
+}
+
+.lp a {
+  color: inherit;
+}
+
+.lp :focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* --- Buttons: pills ------------------------------------------------------ */
+
+.lp-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 22px;
+  border-radius: 9999px;
+  border: 1px solid var(--lp-ink);
+  background: transparent;
+  color: var(--lp-ink);
+  font: 500 15px/1 var(--font-text);
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background-color 120ms,
+    color 120ms,
+    border-color 120ms;
+}
+
+.lp-btn:hover {
+  background: var(--lp-ink);
+  color: var(--lp-ground);
+}
+
+.lp-btn.primary {
+  background: var(--lp-action);
+  border-color: var(--lp-action);
+  color: var(--lp-action-label);
+}
+
+.lp-btn.primary:hover {
+  background: var(--lp-action-hover);
+  border-color: var(--lp-action-hover);
+}
+
+.lp-btn.small {
+  min-height: 36px;
+  padding: 0 16px;
+  font-size: 14px;
+}
+
+/* --- Header: brand row above full-width navigation ----------------------- */
+
+.lp-brandrow {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  height: 88px;
+}
+
+.lp-brandrow-left {
+  display: flex;
+  gap: 20px;
+  font-size: 14px;
+}
+
+.lp-brandrow-left a,
+.lp-brandrow-right > a:not(.lp-btn) {
+  text-decoration: none;
+  font-size: 14px;
+}
+
+.lp-brandrow-left a:hover,
+.lp-brandrow-right > a:not(.lp-btn):hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.lp-brandrow-right {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 20px;
+}
+
+.lp-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  font-family: var(--font-display);
+  font-size: 32px;
+  line-height: 1;
+  letter-spacing: -0.01em;
+}
+
+.lp-brand svg {
+  width: 30px;
+  height: 30px;
+}
+
+.lp-nav {
+  border-top: 1px solid var(--lp-rule);
+  border-bottom: 1px solid var(--lp-rule);
+}
+
+.lp-nav ul {
+  display: flex;
+  justify-content: center;
+  gap: 56px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lp-nav a {
+  display: block;
+  padding: 14px 0;
+  font-size: 14px;
+  text-decoration: none;
+}
+
+.lp-nav a:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+/* --- Hero ------------------------------------------------------------------- */
+
+.lp-hero-copy {
+  padding-top: 112px;
+  padding-bottom: 64px;
+  text-align: center;
+}
+
+.lp-kicker {
+  margin: 0 0 20px;
+  font: 400 13px/1.4 var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--lp-muted);
+}
+
+.lp-kicker b {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 10px;
+  vertical-align: 1px;
+  background: var(--signal);
+}
+
+.lp h1 {
+  margin: 0 auto;
+  max-width: 15ch;
+  font: 400 72px/1.02 var(--font-display);
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+
+.lp h1 em {
+  font-style: italic;
+}
+
+.lp-lede {
+  max-width: 34em;
+  margin: 24px auto 0;
+  color: var(--lp-ink-2);
+  font-size: 18px;
+  line-height: 1.55;
+}
+
+.lp-actions {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 36px;
+}
+
+/* Proof under the film: a caption on the left, numbers on the right. */
+.lp-proof {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 48px;
+  padding-top: 28px;
+  padding-bottom: 8px;
+}
+
+.lp-proof-caption {
+  max-width: 300px;
+  margin: 0;
+  color: var(--lp-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.lp-proof-caption a {
+  text-underline-offset: 3px;
+}
+
+.lp-numbers {
+  display: flex;
+  margin: 0;
+}
+
+.lp-numbers div {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 0 24px;
+  border-left: 1px solid var(--lp-rule);
+}
+
+.lp-numbers div:first-child {
+  border-left: 0;
+  padding-left: 0;
+}
+
+.lp-numbers div:last-child {
+  padding-right: 0;
+}
+
+.lp-numbers dt {
+  order: 2;
+  max-width: 9em;
+  color: var(--lp-muted);
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.lp-numbers dd {
+  margin: 0;
+  font: 400 30px/1 var(--font-display);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* --- The film --------------------------------------------------------------- */
+
+.film {
+  margin: 0;
+  background: var(--film-ground);
+  color: var(--film-ink);
+}
+
+.film-box {
+  position: relative;
+  height: clamp(420px, 47vw, 700px);
+  overflow: hidden;
+  /* Hour ticks run the full width, past the stage, so the band reads as one
+     field and not a picture in a frame. Hard stops: lines, not a gradient. */
+  background-image: repeating-linear-gradient(
+    to right,
+    var(--film-rule) 0 1px,
+    transparent 1px 64px
+  );
+  background-size: 100% 18px;
+  background-repeat: repeat-x;
+  background-position: 0 100%;
+}
+
+.film-fit {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform-origin: 50% 50%;
+}
+
+.film-stage {
+  position: relative;
+  font-family: var(--font-text);
+  color: var(--film-ink);
+}
+
+.film-stage > *,
+.film-agents > *,
+.film-intents > * {
+  position: absolute;
+}
+
+.film-stage *,
+.film-stage {
+  will-change: auto;
+}
+
+.film-mono {
+  margin: 0;
+  font: 400 19px/1.3 var(--font-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--film-ink-2);
+  white-space: nowrap;
+}
+
+.film-head {
+  left: 0;
+  right: 0;
+  top: 46px;
+  margin: 0;
+  text-align: center;
+  font: 400 60px/1.05 var(--font-display);
+  letter-spacing: -0.01em;
+  color: var(--film-ink);
+}
+
+.film-card {
+  width: 330px;
+  padding: 18px 20px 20px;
+  border-radius: 8px;
+  background: #fbf9f4;
+  color: #1c1a16;
+  transform-origin: 50% 50%;
+}
+
+.film-card-meta {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  font: 400 15px/1.2 var(--font-mono);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #57514a;
+}
+
+.film-card p {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.32;
+}
+
+.film-tboh {
+  position: relative;
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  font-weight: 600;
+}
+
+.film-tboh i {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -3px;
+  height: 3px;
+  background: #d9480f;
+  transform-origin: 0 50%;
+}
+
+.film-scan {
+  width: 310px;
+  height: 2px;
+  background: var(--film-signal);
+  z-index: 5;
+}
+
+.film-token,
+.film-case-label,
+.film-clock,
+.film-word,
+.film-wtag,
+.film-latency {
+  left: 0;
+  right: 0;
+  text-align: center;
+}
+
+.film-token {
+  font: 600 70px/1 var(--font-mono);
+  letter-spacing: 0.02em;
+  color: var(--film-signal);
+}
+
+.film-token span {
+  display: inline-block;
+}
+
+.film-intents {
+  width: 380px;
+}
+
+.film-intent {
+  left: 0;
+  right: 0;
+  display: grid;
+  grid-template-columns: 150px 1fr 56px;
+  align-items: center;
+  gap: 14px;
+  height: 46px;
+  font: 400 21px/1 var(--font-mono);
+  color: var(--film-ink-2);
+}
+
+.film-intent:nth-child(1) {
+  top: 0;
+}
+.film-intent:nth-child(2) {
+  top: 46px;
+}
+.film-intent:nth-child(3) {
+  top: 92px;
+}
+.film-intent:nth-child(4) {
+  top: 138px;
+}
+
+.film-intent b {
+  height: 10px;
+  background: var(--film-rule);
+}
+
+.film-intent b i {
+  display: block;
+  height: 100%;
+  background: var(--film-ink-2);
+  transform-origin: 0 50%;
+}
+
+.film-intent em {
+  font-style: normal;
+  text-align: right;
+}
+
+.film-intent-win {
+  color: var(--film-signal);
+  background: var(--film-ground);
+}
+
+.film-intent-win b i {
+  background: var(--film-signal);
+}
+
+.film-intent-tag {
+  top: 204px;
+  left: 0;
+  color: var(--film-ink);
+}
+
+.film-clock p {
+  color: var(--film-ink-2);
+}
+
+.film-clock strong {
+  display: block;
+  margin-top: 4px;
+  font: 400 150px/1 var(--font-display);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.film-axis {
+  height: 2px;
+  background: var(--film-ink);
+  transform-origin: 0 50%;
+}
+
+.film-day {
+  position: absolute;
+  font-size: 16px;
+}
+
+.film-block {
+  height: 40px;
+  border: 1px solid var(--film-ink-2);
+  border-bottom: 0;
+  transform-origin: 0 50%;
+}
+
+.film-night {
+  height: 0;
+  border-top: 2px dotted var(--film-rule);
+}
+
+.film-night span {
+  position: absolute;
+  top: -34px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 15px;
+}
+
+.film-fill {
+  height: 8px;
+  background: var(--film-ink);
+  transform-origin: 0 50%;
+}
+
+.film-risk {
+  height: 8px;
+  background: var(--film-signal);
+}
+
+.film-marker,
+.film-flag,
+.film-needle {
+  width: 0;
+}
+
+.film-marker::before {
+  content: "";
+  position: absolute;
+  left: -6px;
+  top: 38px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--film-ink);
+}
+
+.film-marker span {
+  position: absolute;
+  left: -10px;
+  top: 0;
+  font-size: 16px;
+}
+
+.film-flag::before {
+  content: "";
+  position: absolute;
+  left: -1px;
+  top: 26px;
+  width: 2px;
+  height: 80px;
+  background: var(--film-ink);
+}
+
+.film-flag span {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  font-size: 16px;
+  color: var(--film-ink);
+}
+
+.film-buffer {
+  height: 10px;
+  border: 1px solid var(--film-ink-2);
+  border-top: 0;
+}
+
+.film-buffer span {
+  position: absolute;
+  right: 0;
+  top: 16px;
+  font-size: 15px;
+}
+
+.film-needle::before {
+  content: "";
+  position: absolute;
+  left: -1.5px;
+  top: 34px;
+  width: 3px;
+  height: 116px;
+  background: var(--film-signal);
+}
+
+.film-needle span {
+  position: absolute;
+  left: -60px;
+  width: 120px;
+  top: 0;
+  text-align: center;
+  color: var(--film-signal);
+  font-weight: 600;
+}
+
+.film-risk-label {
+  color: var(--film-signal);
+  font-size: 15px;
+}
+
+.film-agents {
+  width: 700px;
+  height: 320px;
+}
+
+.film-agent {
+  left: 0;
+  right: 0;
+  height: 68px;
+  display: grid;
+  grid-template-columns: 150px 120px 110px 1fr 64px;
+  align-items: center;
+  padding: 0 18px;
+  border-top: 1px solid var(--film-rule);
+}
+
+.film-agent strong {
+  font: 400 40px/1 var(--font-display);
+}
+
+.film-agent .film-mono {
+  font-size: 17px;
+}
+
+.film-agent em {
+  font-style: normal;
+  font-size: 15px;
+}
+
+.film-agent b {
+  font: 600 34px/1 var(--font-mono);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.film-strike {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  top: 50%;
+  height: 2px;
+  background: var(--film-signal);
+  transform-origin: 0 50%;
+}
+
+.film-agent-picked {
+  background: #fbf9f4;
+  color: #1c1a16;
+  border-top-color: transparent;
+}
+
+.film-agent-picked .film-mono {
+  color: #57514a;
+}
+
+.film-assigned {
+  right: 14px;
+  top: -16px;
+  z-index: 2;
+  padding: 6px 12px;
+  border-radius: 9999px;
+  background: var(--film-signal);
+  color: #1c1a16;
+  font-weight: 600;
+  font-size: 16px;
+}
+
+.film-ring {
+  width: 320px;
+  height: 320px;
+  border-radius: 50%;
+  border: 2px solid var(--film-signal);
+}
+
+.film-screen {
+  width: 140px;
+  height: 100px;
+  border: 1px solid var(--film-ink-2);
+  border-radius: 8px;
+  border-top-width: 10px;
+}
+
+.film-screen span {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 112px;
+  text-align: center;
+  font-size: 14px;
+}
+
+.film-screen i {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
+  border-radius: 50%;
+  background: var(--film-signal);
+}
+
+.film-wire {
+  height: 2px;
+  background: var(--film-ink-2);
+  transform-origin: 100% 50%;
+}
+
+.film-wire-r {
+  transform-origin: 0 50%;
+}
+
+.film-ticket {
+  width: 460px;
+  height: 156px;
+  padding: 22px 24px;
+  border-radius: 8px;
+  background: #fbf9f4;
+  color: #1c1a16;
+  z-index: 2;
+}
+
+.film-ticket .film-mono {
+  color: #57514a;
+  font-size: 16px;
+}
+
+.film-ticket strong {
+  display: block;
+  margin-top: 8px;
+  font: 400 36px/1.1 var(--font-display);
+}
+
+.film-pills {
+  position: absolute;
+  right: 22px;
+  bottom: 22px;
+  width: 140px;
+  height: 32px;
+}
+
+.film-pill {
+  position: absolute;
+  right: 0;
+  top: 0;
+  padding: 6px 12px;
+  border-radius: 9999px;
+  border: 1px solid #57514a;
+  font: 600 15px/1 var(--font-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #1c1a16;
+}
+
+.film-pill-done {
+  background: #1c1a16;
+  border-color: #1c1a16;
+  color: #fbf9f4;
+}
+
+.film-latency {
+  color: var(--film-ink);
+}
+
+.film-word {
+  font: 400 220px/1 var(--font-display);
+  letter-spacing: -0.02em;
+  color: var(--film-ink);
+}
+
+.film-word span {
+  display: inline-block;
+}
+
+.film-word i {
+  display: inline-block;
+  width: 26px;
+  height: 26px;
+  margin-left: 8px;
+  background: var(--film-signal);
+}
+
+.film-wrule {
+  height: 2px;
+  background: var(--film-ink-2);
+}
+
+.film-wtag {
+  color: var(--film-ink);
+}
+
+.film-corner {
+  font-size: 14px;
+  color: var(--film-ink-2);
+}
+
+.film-corner-r {
+  text-align: right;
+}
+
+.film-track {
+  height: 1px;
+  background: var(--film-rule);
+}
+
+.film-track i {
+  display: block;
+  height: 1px;
+  background: var(--film-signal);
+  transform-origin: 0 50%;
+}
+
+.film-veil {
+  inset: 0;
+  background: var(--film-ground);
+  z-index: 10;
+}
+
+/* Controls under the picture, on the page's own edges. */
+.film-controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 56px;
+  border-top: 1px solid var(--film-rule);
+}
+
+.film-play {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 9999px;
+  border: 1px solid var(--film-ink-2);
+  background: transparent;
+  color: var(--film-ink);
+  cursor: pointer;
+}
+
+.film-play svg {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+}
+
+.film-play:hover {
+  background: var(--film-ink);
+  color: var(--film-ground);
+}
+
+.film-chapters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 22px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.film-chapters button {
+  padding: 6px 0;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--film-ink-2);
+  font: 400 13px/1.2 var(--font-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.film-chapters button:hover {
+  color: var(--film-ink);
+}
+
+.film-chapters button[aria-current="step"] {
+  color: var(--film-ink);
+  border-bottom-color: var(--film-signal);
+}
+
+.film-chapter-n {
+  color: var(--film-ink-2);
+}
+
+.film :focus-visible {
+  outline-color: var(--film-signal);
+}
+
+/* Recording mode: the stage alone, 1920 x 1080. */
+.film-capture {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background-color: #1c1a16;
+  background-image: repeating-linear-gradient(to right, #3a3530 0 1px, transparent 1px 64px);
+  background-size: 100% 18px;
+  background-repeat: repeat-x;
+  background-position: 0 100%;
+  --film-ground: #1c1a16;
+  --film-ink: #ede7dc;
+  --film-ink-2: #b0a796;
+  --film-signal: #f06a2e;
+  --film-rule: #3a3530;
+}
+
+/* --- Narrow screens ------------------------------------------------------- */
+
+@media (max-width: 760px) {
+  .lp-brandrow {
+    grid-template-columns: auto 1fr;
+    height: 64px;
+  }
+  .lp-brandrow-left {
+    display: none;
+  }
+  .lp-brand {
+    font-size: 26px;
+  }
+  .lp-brandrow-right {
+    gap: 14px;
+  }
+  .lp-brandrow-right .lp-btn {
+    display: none;
+  }
+  .lp-nav ul {
+    justify-content: space-between;
+    gap: 0;
+  }
+  .lp-nav a {
+    font-size: 13px;
+    padding: 12px 0;
+  }
+  .lp-hero-copy {
+    padding-top: 56px;
+    padding-bottom: 40px;
+  }
+  .lp h1 {
+    font-size: 44px;
+    line-height: 1.04;
+  }
+  .lp-lede {
+    font-size: 16px;
+  }
+  .lp-actions {
+    flex-direction: column;
+    align-items: stretch;
+    max-width: 320px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .film-box {
+    height: 340px;
+  }
+  .film-controls {
+    gap: 12px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+  .film-chapters {
+    gap: 2px 14px;
+  }
+  .lp-proof {
+    flex-direction: column;
+    gap: 20px;
+  }
+  .lp-proof-caption {
+    max-width: none;
+  }
+  .lp-numbers {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px 0;
+    width: 100%;
+  }
+  .lp-numbers div,
+  .lp-numbers div:first-child {
+    flex-direction: column;
+    gap: 4px;
+    padding: 0 0 0 14px;
+    border-left: 1px solid var(--lp-rule);
+  }
+  .lp-numbers dd {
+    font-size: 28px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-btn {
+    transition: none;
+  }
+}

@@ -2,6 +2,8 @@ import { Link, Navigate, Route, Routes } from "react-router";
 import { useUser } from "./auth";
 import { Empty } from "./components/bits";
 import { Layout } from "./components/Layout";
+import { FilmCapture } from "./landing/Film";
+import { LandingPage } from "./landing/LandingPage";
 import { isStaff } from "./lib/rules";
 import {
   AcceptInvitePage,
@@ -24,9 +26,13 @@ import { TicketsPage } from "./pages/TicketsPage";
 export function App() {
   const user = useUser();
   if (!user) {
-    // Signed out: the account pages, and the login page for any other address.
+    // Signed out: the landing page at "/", the account pages, and the login
+    // page for any other address (so an old link still lands somewhere useful).
     return (
       <Routes>
+        <Route index element={<LandingPage />} />
+        <Route path="login" element={<LoginPage />} />
+        <Route path="film" element={<FilmCapture />} />
         <Route path="signup" element={<SignupPage />} />
         <Route path="forgot-password" element={<ForgotPasswordPage />} />
         <Route path="verify-email" element={<VerifyEmailPage />} />
