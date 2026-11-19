@@ -1,11 +1,12 @@
 import { Link } from "react-router";
+import { OpsBackdrop } from "../components/OpsBackdrop";
 import { Film } from "./Film";
+import { About, Contact, Footer, Records, RunItFree, Screens } from "./sections";
+import { REPO } from "./links";
 import "./landing.css";
 
 // The public front page (signed out, at "/"). Every number on it is measured
 // (README, docs/load-test.md); nothing is invented.
-
-const REPO = "https://github.com/baishnabisamal/OpsDesk";
 
 export function Mark() {
   return (
@@ -123,10 +124,22 @@ function Hero() {
 export function LandingPage() {
   return (
     <div className="lp">
-      <Header />
-      <main>
-        <Hero />
-      </main>
+      <OpsBackdrop />
+      <div className="lp-content">
+        <a href="#main" className="lp-skip">
+          Skip to content
+        </a>
+        <Header />
+        <main id="main">
+          <Hero />
+          <About />
+          <Screens />
+          <RunItFree />
+          <Records />
+          <Contact />
+        </main>
+        <Footer />
+      </div>
     </div>
   );
 }
