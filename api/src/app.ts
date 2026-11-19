@@ -1,4 +1,5 @@
 import express from "express";
+import { config } from "./core/config.js";
 import { errorHandler, notFoundHandler } from "./core/errors.js";
 import { requestLogger } from "./core/logger.js";
 import { metricsMiddleware } from "./core/metrics.js";
@@ -29,6 +30,9 @@ function limiterRedis() {
 // directly with Supertest.
 export function createApp() {
   const app = express();
+  // Behind the deployment's proxy, req.ip must be the visitor, not the proxy
+  // (see TRUST_PROXY in core/config.ts). 0 locally: the header is ignored.
+  app.set("trust proxy", config.trustProxy);
 
   app.use(requestLogger);
   app.use(metricsMiddleware);

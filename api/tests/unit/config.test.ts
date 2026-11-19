@@ -35,6 +35,34 @@ describe("config", () => {
     expect(() => loadConfig({ ...validEnv, JWT_SECRET: "short" })).toThrow(/at least 32/);
   });
 
+  it("trusts no proxy and sends mail without a login by default (local Mailpit)", () => {
+    const config = loadConfig(validEnv);
+    expect(config.trustProxy).toBe(0);
+    expect(config.mail.smtpSecure).toBe(false);
+    expect(config.mail.smtpAuth).toBeNull();
+  });
+
+  it("reads the deployment settings: one proxy, a mail provider login, TLS", () => {
+    const config = loadConfig({
+      ...validEnv,
+      TRUST_PROXY: "1",
+      SMTP_USER: "relay-user",
+      SMTP_PASSWORD: "relay-password",
+      SMTP_SECURE: "true",
+    });
+    expect(config.trustProxy).toBe(1);
+    expect(config.mail.smtpSecure).toBe(true);
+    expect(config.mail.smtpAuth).toEqual({ user: "relay-user", pass: "relay-password" });
+  });
+
+  it("refuses an SMTP user without a password", () => {
+    expect(() => loadConfig({ ...validEnv, SMTP_USER: "relay-user" })).toThrow(/set together/);
+  });
+
+  it("refuses SMTP_SECURE values other than true or false", () => {
+    expect(() => loadConfig({ ...validEnv, SMTP_SECURE: "yes" })).toThrow(/SMTP_SECURE/);
+  });
+
   it("names every missing setting in one error", () => {
     expect(() => loadConfig({})).toThrow(/POSTGRES_DB[\s\S]*APP_DB_PASSWORD/);
   });

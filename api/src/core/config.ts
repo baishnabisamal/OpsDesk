@@ -39,6 +39,12 @@ const envSchema = z.object({
   // itself (not the hosts file), so "localhost" can time out offline.
   SMTP_HOST: z.string().min(1).default("127.0.0.1"),
   SMTP_PORT: z.coerce.number().int().default(1025),
+  // A real mail provider needs a login. Mailpit needs none, so both are optional.
+  SMTP_USER: z.string().min(1).optional(),
+  SMTP_PASSWORD: z.string().min(1).optional(),
+  // "true" = TLS from the first byte (port 465). "false" = plain first, then
+  // STARTTLS when the server offers it (port 587, or Mailpit on 1025).
+  SMTP_SECURE: z.enum(["true", "false"]).default("false"),
   MAIL_FROM: z.string().min(3).default("OpsDesk Support <support@opsdesk.local>"),
   // Where the web app runs. Links in account emails point here.
   APP_URL: z.string().url().default("http://localhost:5173"),
@@ -66,6 +72,13 @@ const envSchema = z.object({
   ML_URL: z.string().url().default("http://127.0.0.1:8001"),
   ML_SHARED_SECRET: z.string().min(16, "must be at least 16 characters"),
   ML_TIMEOUT_MS: z.coerce.number().int().positive().default(150),
+
+  // How many reverse proxies stand in front of the API. 0 locally. 1 in the
+  // deployment (Caddy). Express then reads the client's address from the
+  // X-Forwarded-For header the proxy adds, so per-IP rate limits see real
+  // visitors instead of one proxy. Never set it higher than the real number
+  // of proxies: a visitor could then fake their address in that header.
+  TRUST_PROXY: z.coerce.number().int().min(0).max(5).default(0),
 });
 
 export type Config = ReturnType<typeof loadConfig>;
@@ -79,11 +92,15 @@ export function loadConfig(env: Record<string, string | undefined>) {
     throw new Error(`Invalid configuration:\n${problems.join("\n")}`);
   }
   const e = parsed.data;
+  if (Boolean(e.SMTP_USER) !== Boolean(e.SMTP_PASSWORD)) {
+    throw new Error("Invalid configuration:\n  SMTP_USER and SMTP_PASSWORD must be set together");
+  }
 
   return {
     nodeEnv: e.NODE_ENV,
     port: e.API_PORT,
     realtimePort: e.REALTIME_PORT,
+    trustProxy: e.TRUST_PROXY,
     logLevel: e.LOG_LEVEL ?? (e.NODE_ENV === "test" ? "silent" : "info"),
     db: {
       host: e.POSTGRES_HOST,
@@ -111,6 +128,10 @@ export function loadConfig(env: Record<string, string | undefined>) {
     mail: {
       smtpHost: e.SMTP_HOST,
       smtpPort: e.SMTP_PORT,
+      smtpSecure: e.SMTP_SECURE === "true",
+      // Both or neither: a user without a password is a mistake in the settings.
+      smtpAuth:
+        e.SMTP_USER && e.SMTP_PASSWORD ? { user: e.SMTP_USER, pass: e.SMTP_PASSWORD } : null,
       from: e.MAIL_FROM,
       appUrl: e.APP_URL.replace(/\/$/, ""),
       inboundDomain: e.INBOUND_DOMAIN,

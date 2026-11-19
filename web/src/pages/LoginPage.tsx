@@ -4,8 +4,11 @@ import { api, ApiError, login } from "../api/client";
 import { ErrorNotice } from "../components/bits";
 import { AuthShell } from "../components/AuthShell";
 
-// The seeded demo accounts (api/scripts/seed.ts). Shown only by the dev
-// server: a production build never lists accounts and a password.
+// The seeded demo accounts (api/scripts/seed.ts). Shown by the dev server,
+// and by a production build only when it was built with
+// VITE_DEMO_LOGINS=true (a public demo whose database holds only seed data).
+// A real deployment leaves it off and never lists accounts and a password.
+const SHOW_DEMO = import.meta.env.DEV || import.meta.env.VITE_DEMO_LOGINS === "true";
 const DEMO_PASSWORD = "Password123!";
 const DEMO_ACCOUNTS = [
   { email: "agent1.eu@opsdesk.test", label: "Agent, EU team" },
@@ -100,7 +103,7 @@ export function LoginPage() {
         New travel agency? <Link to="/signup">Create an account</Link>
       </p>
 
-      {import.meta.env.DEV ? (
+      {SHOW_DEMO ? (
         <div className="demo">
           <p>
             Demo accounts from the seed data. Password <span className="mono">{DEMO_PASSWORD}</span>

@@ -1,0 +1,11 @@
+{
+  // The production build: plain JavaScript in dist/, without the tests.
+  // Development and tests still run the TypeScript directly through tsx.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "sourceMap": true
+  },
+  "include": ["src", "scripts"],
+  "exclude": ["dist", "node_modules", "tests"]
+}

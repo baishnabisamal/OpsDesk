@@ -24,10 +24,15 @@ import { SYSTEM_PRINCIPAL } from "../domain/enums.js";
 const LEASE_SECONDS = 60;
 
 export function createMailTransport(): Transporter {
+  const { smtpAuth } = config.mail;
   return nodemailer.createTransport({
     host: config.mail.smtpHost,
     port: config.mail.smtpPort,
-    secure: false,
+    secure: config.mail.smtpSecure,
+    // With a login, refuse to continue without TLS, so the password and the
+    // emails (which carry sign-in links) never cross the internet in plain text.
+    requireTLS: smtpAuth !== null && !config.mail.smtpSecure,
+    ...(smtpAuth ? { auth: smtpAuth } : {}),
     connectionTimeout: 5000,
   });
 }
