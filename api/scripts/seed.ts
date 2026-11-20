@@ -243,8 +243,10 @@ export async function seed(
   // twice in one process gives the same ids both times.
   random = createRandom(SEED);
 
-  if (config.nodeEnv === "production") {
-    throw new Error("Refusing to load demo data in production.");
+  if (config.nodeEnv === "production" && !config.allowDemoSeed) {
+    throw new Error(
+      "Refusing to load demo data in production. For a demo server that holds only demo data, run it once with ALLOW_DEMO_SEED=true.",
+    );
   }
 
   const passwordHash = await hashPassword(SEED_PASSWORD);

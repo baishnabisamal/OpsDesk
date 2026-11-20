@@ -55,6 +55,21 @@ describe("config", () => {
     expect(config.mail.smtpAuth).toEqual({ user: "relay-user", pass: "relay-password" });
   });
 
+  it("treats empty values as not set (Docker Compose writes ${KEY:-} as empty)", () => {
+    const config = loadConfig({ ...validEnv, SMTP_USER: "", SMTP_PASSWORD: "", LOG_LEVEL: "" });
+    expect(config.mail.smtpAuth).toBeNull();
+    expect(config.logLevel).toBe("info");
+  });
+
+  it("names an empty required setting as missing", () => {
+    expect(() => loadConfig({ ...validEnv, JWT_SECRET: "" })).toThrow(/JWT_SECRET/);
+  });
+
+  it("never allows the demo seed unless asked", () => {
+    expect(loadConfig(validEnv).allowDemoSeed).toBe(false);
+    expect(loadConfig({ ...validEnv, ALLOW_DEMO_SEED: "true" }).allowDemoSeed).toBe(true);
+  });
+
   it("refuses an SMTP user without a password", () => {
     expect(() => loadConfig({ ...validEnv, SMTP_USER: "relay-user" })).toThrow(/set together/);
   });

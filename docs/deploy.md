@@ -89,7 +89,7 @@ curl -fsS https://opsdesk.203-0-113-10.sslip.io/readyz
 For a public portfolio demo, load the seed data and show the demo accounts on the login page:
 
 ```bash
-docker compose --env-file deploy/.env -f deploy/docker-compose.yml run --rm migrate node dist/scripts/seed.js
+docker compose --env-file deploy/.env -f deploy/docker-compose.yml run --rm -e ALLOW_DEMO_SEED=true migrate node dist/scripts/seed.js
 sed -i 's/^DEMO_LOGINS=.*/DEMO_LOGINS=true/' deploy/.env
 ./deploy/update.sh --no-pull
 ```

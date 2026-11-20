@@ -79,12 +79,22 @@ const envSchema = z.object({
   // visitors instead of one proxy. Never set it higher than the real number
   // of proxies: a visitor could then fake their address in that header.
   TRUST_PROXY: z.coerce.number().int().min(0).max(5).default(0),
+
+  // The seed script refuses to run in production (it creates accounts with a
+  // published password). A public demo server may opt in for one run:
+  //   docker compose ... run --rm -e ALLOW_DEMO_SEED=true migrate node dist/scripts/seed.js
+  ALLOW_DEMO_SEED: z.enum(["true", "false"]).default("false"),
 });
 
 export type Config = ReturnType<typeof loadConfig>;
 
 export function loadConfig(env: Record<string, string | undefined>) {
-  const parsed = envSchema.safeParse(env);
+  // An empty value means "not set". Docker Compose writes `KEY: ${KEY:-}` as
+  // an empty string, and so does `KEY=` in a .env file; without this, an
+  // optional setting left blank (SMTP_USER) stopped the app at startup, and a
+  // required one left blank got a confusing "too short" message.
+  const set = Object.fromEntries(Object.entries(env).filter(([, value]) => value !== ""));
+  const parsed = envSchema.safeParse(set);
   if (!parsed.success) {
     const problems = parsed.error.issues.map(
       (issue) => `  ${issue.path.join(".")}: ${issue.message}`,
@@ -101,6 +111,7 @@ export function loadConfig(env: Record<string, string | undefined>) {
     port: e.API_PORT,
     realtimePort: e.REALTIME_PORT,
     trustProxy: e.TRUST_PROXY,
+    allowDemoSeed: e.ALLOW_DEMO_SEED === "true",
     logLevel: e.LOG_LEVEL ?? (e.NODE_ENV === "test" ? "silent" : "info"),
     db: {
       host: e.POSTGRES_HOST,

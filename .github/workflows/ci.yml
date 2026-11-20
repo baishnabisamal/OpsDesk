@@ -115,7 +115,7 @@ jobs:
           curl -fsS 'http://localhost/socket.io/?EIO=4&transport=polling' | grep -q '"sid"'
 
           # Demo data, then a real sign-in and an authenticated read.
-          compose run --rm migrate node dist/scripts/seed.js
+          compose run --rm -e ALLOW_DEMO_SEED=true migrate node dist/scripts/seed.js
           token=$(curl -fsS http://localhost/api/v1/auth/login \
             -H 'Content-Type: application/json' \
             -d '{"email":"user1@skyline-travels.test","password":"Password123!"}' \
