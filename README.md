@@ -1,5 +1,11 @@
 # OpsDesk
 
+<p align="center">
+  <img src="docs/media/opsdesk-film.gif" width="800" alt="15-second OpsDesk film: three agencies write about one booking, the messages are grouped into one case, the intent is read as a cancellation, the SLA deadline is worked out from business hours and the free-cancellation date, routing picks an agent, and both screens update live.">
+</p>
+
+<p align="center"><em>One ticket's path in 15 seconds: group, classify, set the deadline, route, update live.</em></p>
+
 A travel-aware operations ticketing system. Travel agencies raise tickets about hotel bookings, and support staff resolve them. Every ticket knows which booking it belongs to, so related contacts are grouped into one case, work is routed to the right agent, and deadlines follow the traveller's check-in date instead of a generic clock.
 
 **Stack:** PostgreSQL, Express, React, Node (PERN), with Redis for queues and a small Python service for machine learning.
