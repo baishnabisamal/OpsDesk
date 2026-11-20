@@ -8,8 +8,13 @@
 	encode zstd gzip
 
 	# Prometheus metrics are for the internal network only (README section 13).
+	# Inside its own handle block: a bare `respond` runs after the `handle`
+	# blocks in Caddy's directive order, so the catch-all below answered first
+	# (found by the CI smoke test, which expects 404 here).
 	@internal path /metrics /metrics/*
-	respond @internal 404
+	handle @internal {
+		respond 404
+	}
 
 	# The API. Caddy adds X-Forwarded-For with the visitor's address and drops
 	# any value the visitor sent, so the API (TRUST_PROXY=1) can trust it.

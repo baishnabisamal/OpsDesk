@@ -102,25 +102,39 @@ jobs:
         run: |
           set -euo pipefail
           compose() { docker compose --env-file deploy/.env -f deploy/docker-compose.yml "$@"; }
-          status() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
+          # Each check prints its name, and on failure what it got instead.
+          # Bodies are read into a variable first: `curl | grep -q` can fail
+          # under pipefail when grep stops reading early.
+          expect_body() { # name, url, text the body must contain
+            local body
+            body=$(curl -fsS "$2") || { echo "FAIL $1: request failed"; exit 1; }
+            if [[ "$body" != *"$3"* ]]; then echo "FAIL $1: body was:"; echo "$body" | head -c 400; exit 1; fi
+            echo "ok   $1"
+          }
+          expect_status() { # name, url, status
+            local got
+            got=$(curl -s -o /dev/null -w '%{http_code}' "$2")
+            [[ "$got" == "$3" ]] || { echo "FAIL $1: expected $3, got $got"; exit 1; }
+            echo "ok   $1"
+          }
 
-          # The API is up and can reach PostgreSQL and Redis.
-          curl -fsS http://localhost/readyz
-          # The React app, and its fallback for a deep link.
-          curl -fsS http://localhost/ | grep -q '<div id="root">'
-          curl -fsS http://localhost/tickets/123 | grep -q '<div id="root">'
-          # Metrics stay internal.
-          test "$(status http://localhost/metrics)" = 404
-          # The WebSocket gateway answers its handshake.
-          curl -fsS 'http://localhost/socket.io/?EIO=4&transport=polling' | grep -q '"sid"'
+          expect_body   "API ready (PostgreSQL and Redis)" http://localhost/readyz '"ready"'
+          expect_body   "React app"                        http://localhost/ '<div id="root">'
+          expect_body   "deep link falls back to the app"  http://localhost/tickets/123 '<div id="root">'
+          expect_status "metrics stay internal"            http://localhost/metrics 404
+          expect_body   "WebSocket gateway handshake"      'http://localhost/socket.io/?EIO=4&transport=polling' '"sid"'
 
           # Demo data, then a real sign-in and an authenticated read.
           compose run --rm -e ALLOW_DEMO_SEED=true migrate node dist/scripts/seed.js
-          token=$(curl -fsS http://localhost/api/v1/auth/login \
+          login=$(curl -fsS http://localhost/api/v1/auth/login \
             -H 'Content-Type: application/json' \
-            -d '{"email":"user1@skyline-travels.test","password":"Password123!"}' \
-            | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')
-          curl -fsS http://localhost/api/v1/tickets -H "Authorization: Bearer $token" | grep -q '"items"'
+            -d '{"email":"user1@skyline-travels.test","password":"Password123!"}') \
+            || { echo "FAIL sign-in"; exit 1; }
+          token=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])' <<<"$login")
+          echo "ok   sign-in"
+          tickets=$(curl -fsS http://localhost/api/v1/tickets -H "Authorization: Bearer $token")
+          [[ "$tickets" == *'"items"'* ]] || { echo "FAIL ticket list: $tickets"; exit 1; }
+          echo "ok   agency reads its tickets"
           echo "smoke test passed"
       - name: Container logs
         if: failure()
