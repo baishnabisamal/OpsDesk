@@ -6,7 +6,125 @@ A travel-aware operations ticketing system. Travel agencies raise tickets about 
 
 **Status:** all six phases are built and their gate tests pass: the ticket core; intent classification and linkage; SLA, routing, workers and queues; side conversations, outbox relay, email, webhook and WebSockets; weekly themes, streaming export, archival, rate limiting, metrics and contract tests; and the React app with real sign-up, email verification, password reset and staff invitations, k6 load tests and CI. Measured: reads p95 10.9 ms at 50 requests per second and ticket create p95 68.9 ms, over 200,000 tickets ([docs/load-test.md](docs/load-test.md)); a 100,000-row export streams in 4.8 s with live heap growth of 3.1 MB; Schemathesis found no 500s in 7,821 generated requests. The intent model is trained on synthetic tickets, so its macro-F1 (0.997) shows the pipeline works, not real-world quality. To see it, follow [docs/demo.md](docs/demo.md). To run it on a server, follow [docs/deploy.md](docs/deploy.md).
 
+## For reviewers
+
+The four things a reviewer needs, in one place. The design document starts at [section 1](#1-what-opsdesk-is).
+
+### R1. Run it
+
+There is no public URL yet; it runs locally (about 10 minutes the first time). A single-server deployment with HTTPS is ready in [`deploy/`](deploy/) and [docs/deploy.md](docs/deploy.md), and CI builds and smoke-tests it on every push.
+
+**Needs:** Node 24, Docker Desktop, and (optional, for the ML service) Python 3.12.
+
+```sh
+git clone https://github.com/baishnabisamal/OpsDesk.git && cd OpsDesk
+make setup               # creates .env from .env.example, installs dependencies
+make up                  # PostgreSQL, Redis and Mailpit in Docker
+make migrate seed        # schema and demo data (same data on every run)
+make ml-setup ml-train   # optional: train the intent model (keyword rules work without it)
+```
+
+Then start each of these in its own terminal:
+
+```sh
+make dev        # API             http://localhost:3000
+make worker     # background jobs, outbox relay, email, SLA scan
+make realtime   # live updates    port 3001
+make web        # the app         http://localhost:5173
+make ml-dev     # optional: ML service, port 8001
+```
+
+Open **http://localhost:5173**. Every email the system sends lands in Mailpit at **http://localhost:8025**. `make test` runs the 823 API and 27 web tests.
+
+### R2. Demo accounts
+
+Every demo account uses the password **`Password123!`**. The sign-in page also lists the main ones as one-click buttons.
+
+| Role | Email | What to try |
+|---|---|---|
+| Travel agency user | `user1@skyline-travels.test` | Raise a ticket; sees only Skyline's tickets and public replies |
+| Agent (EU team) | `agent1.eu@opsdesk.test` | Queues, replies, internal notes, supplier threads |
+| Agent (Middle East team) | `agent1.mea@opsdesk.test` | Go online, then receive a routed ticket (Skyline booking `TBOH1000020` is in this region) |
+| Escalation manager | `manager.eu@opsdesk.test` | The Escalations queue, de-escalate |
+| Team lead | `lead.eu@opsdesk.test` | Assign by hand, insights, CSV export, team and invitations |
+
+Pattern: each region (`eu`, `mea`, `apac`, `amer`) has `lead.<r>`, `manager.<r>` and `agent1`–`agent3.<r>`; each of the 5 agencies (`skyline-travels`, `globe-trotters`, `sunrise-holidays`, `atlas-tours`, `bluewave-trips`) has `user1` and `user2@<agency>.test`. You can also create a new agency account on the sign-up page.
+
+### R3. Feature checklist, mapped to Problems 1–6
+
+| # | Problem | What OpsDesk does | Where to see it | Proof |
+|---|---|---|---|---|
+| 1 | **Scattered contacts**: one booking, many tickets, many agents | The booking reference (TBOH) is read from the text; tickets on the same booking join one case automatically; manual links too | Ticket page, "Same booking"; Case view; Linked cases queue | `cases.test.ts`: three contacts on one TBOH land in one case |
+| 2 | **Unclear intent**: tickets arrive as free text | Keyword rules first, then a Python model; low confidence is flagged for review; overrides are logged; a slow or stopped model never blocks create | Ticket page, Intent and "check this" tag | Create works with the ML service stopped; macro-F1 0.997 on synthetic data |
+| 3 | **Manual routing** with no record of why | Filters agents who are offline, off shift or at their limit, then scores skill and free capacity; stores the reasons; row locks prevent over-assignment | Timeline: "Routing assigned it to …"; Triage for tickets nobody could take | `routing.test.ts`: 100 simultaneous creates never exceed a cap or assign twice |
+| 4 | **Supplier conversations break** when a ticket moves | Side conversations with the hotel by email; recipients are stored on the thread, so replies still arrive after a transfer; signed inbound webhook | Ticket page, "Supplier threads", **Write to a supplier** | Recipients survive two transfers; inbound webhook checks HMAC, timestamp and duplicates |
+| 5 | **Wrong urgency**: a guest arriving tonight waits behind next month | SLA from priority and the region's business hours, pulled in before the free-cancellation date or check-in; at-risk and breached flags; automatic escalation on breach; manual **Escalate** | SLA column in every queue; Escalations queue | SLA property tests (fast-check); scanner test escalates breached tickets |
+| 6 | **No insight** into what agencies are writing about | Weekly themes (intent counts in SQL, clusters from the model); streaming CSV export with no row cap | Insights and export (lead) | 100,000 rows export in 4.8 s with flat memory |
+
+Also built: live updates on every screen (about 220 ms), optimistic locking with a conflict banner, internal notes the database hides from agencies, agency isolation with Row-Level Security, real sign-up with email verification and password reset, rate limiting, Prometheus metrics, k6 load tests and CI.
+
+### R4. Demo script (about 4 minutes)
+
+Open two browser windows side by side (one normal, one private) so two people can be signed in at once. The full 10-minute version is [docs/demo.md](docs/demo.md).
+
+**1. Linkage (45 s).** Window A: sign in as the **travel agency user**. **Raise a ticket**: subject "Guest wants to cancel", text "Our guest wants to cancel TBOH1000020, please confirm there is no charge." Send.
+- *Say:* the booking was found in the text, the intent was read as Cancellation, and the deadline was worked out from business hours and the free-cancellation date.
+- Point at **Same booking** on the ticket page, then click **case view**: every ticket about this booking, from every contact, in one place.
+
+**2. Routing (45 s).** Window B: sign in as **`agent1.mea@opsdesk.test`** and click **Online** in the sidebar. Window A: raise a second ticket on `TBOH1000020`.
+- It is assigned to the agent at once. Open its **Timeline**: "Routing assigned it to …".
+- *Say:* routing only considers agents who are online, on shift and under their limit, then scores skill and free capacity, and stores why. Shifts are Monday to Friday, 09:00–18:00 Dubai time; outside them the ticket waits in **Triage**, which is the other half of the story.
+
+**3. Side conversation (45 s).** Window B, on the ticket: **Supplier threads** → **Write to a supplier**, write to the hotel, **Send to supplier**. Open Mailpit to show the email that went out.
+- *Say:* the recipients are stored on the thread, not taken from the current owner, so the hotel's reply still lands here after the ticket moves to another team.
+- Back in window A: the agency sees none of it. Add an **Internal note** in window B to make the same point: the database filters it out, not the screen.
+
+**4. Escalate (45 s).** Window B: click **Escalate**. Sign in as **`manager.eu@opsdesk.test`** in a window and open **Escalations**: the ticket is there, with its SLA flag.
+- *Say:* a ticket that breaches its deadline while open is escalated automatically by the SLA scanner, through the same transition rules people use.
+- Optional: change the priority in both windows at once. The second save is refused (409) with **Apply my change again** / **Keep theirs**: no lost updates.
+
+**5. Insights (45 s).** Sign in as **`lead.eu@opsdesk.test`** → **Insights and export**.
+- Weekly intent counts and theme clusters; pick a range and **Download CSV** (it streams, so there is no row limit).
+- Close on the numbers: reads p95 10.9 ms and create p95 68.9 ms over 200,000 tickets; zero server errors in 7,821 generated requests.
+
+### R5. Architecture and cost versus "pay per add-on" or per-call APIs
+
+```mermaid
+flowchart LR
+    Agency["Agency browser"] -->|HTTPS| Caddy
+    Staff["Staff browser"] -->|HTTPS + WebSocket| Caddy
+    Caddy["Caddy: HTTPS, React files"] --> API["API (Node)"]
+    Caddy --> RT["Realtime gateway (Node)"]
+    API --> PG[("PostgreSQL: data, rules, RLS")]
+    API -->|classify| ML["ML service (Python)"]
+    API --> Redis[("Redis: queues, events")]
+    Worker["Worker (Node): SLA scan, routing retry, outbox relay, email"] --> PG
+    Worker --> Redis
+    Redis --> RT
+    Worker -->|SMTP| Mail["Email provider"]
+    Hotel["Hotel email"] -->|signed webhook| API
+```
+
+One Node codebase runs as three processes; PostgreSQL is the single source of truth. Details in [section 5](#5-architecture) and the [decision records](docs/adr/).
+
+The usual way to get these features is a hosted helpdesk billed per agent per month, with skills-based routing, AI triage, side conversations or advanced SLAs sold as add-ons, plus classification or messaging APIs billed per call or per throughput tier. Compared with that:
+
+| | Hosted helpdesk with add-ons and per-call APIs | OpsDesk |
+|---|---|---|
+| **Running cost** | Grows with every agent, every add-on and every API call | One small server, flat; it can run on a free tier. The model runs locally, so classifying a ticket costs nothing extra |
+| **Cost of more traffic** | Higher tier or more calls billed | Measured headroom on one laptop: about 1,730 requests per second, against a design load of about 0.6 new tickets per second |
+| **Travel rules** (check-in, free-cancellation date, booking reference) | Custom fields and scripts on top of a generic ticket | Built into the data model, the SLA maths and the routing |
+| **Data and isolation** | On the vendor's platform | In your PostgreSQL; agencies are separated by Row-Level Security |
+| **What you take on** | Little to build or run | You build and run it: backups, updates and monitoring are yours ([deploy scripts](deploy/) cover the basics) |
+| **Complexity** | Many products, integrations and webhooks to wire together | One codebase, one database, three processes |
+
+The honest summary: a hosted product is cheaper to start and has no upkeep; OpsDesk costs less as the team and traffic grow, keeps the travel rules first-class, and keeps the data in house. No vendor prices are quoted here because they change; compare current price lists for your own team size.
+
+---
+
 ## Contents
+
+- [For reviewers: run it, demo accounts, feature checklist, demo script, architecture and cost](#for-reviewers)
 
 1. [What OpsDesk is](#1-what-opsdesk-is)
 2. [Goals and non-goals](#2-goals-and-non-goals)
