@@ -143,6 +143,14 @@ export async function routeTicket(
     await addEvent(db, after, null, "status_changed", { from: "new", to: "open" });
   }
   await addOutbox(db, after.id, "ticket.assigned", { ticket_id: after.id, assignee_id: chosenId });
+  // Opening is news for the agency as well (assignment itself is staff-only).
+  if (opens) {
+    await addOutbox(db, after.id, "ticket.status_changed", {
+      ticket_id: after.id,
+      from: "new",
+      to: "open",
+    });
+  }
   return after;
 }
 

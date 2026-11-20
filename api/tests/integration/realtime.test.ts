@@ -152,6 +152,22 @@ describe("the WebSocket gateway", () => {
     ).toBe(false);
   });
 
+  // Found while recording the demo: assigning a new ticket also opens it, but
+  // only the staff-only "ticket.assigned" was published, so the agency's page
+  // kept showing "New" until some later event made it refetch.
+  it("assigning a new ticket tells the agency it is now open (but not who owns it)", async () => {
+    const agency = await client(requesterA.token);
+    const ticket = await openTicket();
+
+    const event = await waitFor(() =>
+      agency.events.find((e) => e.ticket_id === ticket.id && e.type === "ticket.status_changed"),
+    );
+    expect(event).toMatchObject({ payload: { from: "new", to: "open" } });
+    expect(
+      agency.events.some((e) => e.ticket_id === ticket.id && e.type === "ticket.assigned"),
+    ).toBe(false);
+  });
+
   it("an internal note is pushed to staff only; a public reply to both", async () => {
     const staff = await client(agent.token);
     const agency = await client(requesterA.token);

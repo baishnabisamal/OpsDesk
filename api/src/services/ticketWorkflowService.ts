@@ -320,6 +320,15 @@ export async function assignTicket(
       ticket_id: after.id,
       assignee_id: assigneeId,
     });
+    // The assignment is staff-only news, but the status change is the agency's
+    // too: without this the agency's open page kept showing "New".
+    if (opens) {
+      await addOutbox(db, after.id, "ticket.status_changed", {
+        ticket_id: after.id,
+        from: "new",
+        to: "open",
+      });
+    }
     return after;
   });
 }

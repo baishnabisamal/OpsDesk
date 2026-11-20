@@ -310,8 +310,10 @@ describe("POST /tickets/:id/transitions", () => {
     );
     expect(events.rows).toEqual([{ data: { from: "open", to: "pending" } }]);
 
+    // Only the row for this move (opening the ticket wrote one for new -> open).
     const outbox = await ownerPool.query(
-      "SELECT 1 FROM outbox WHERE ticket_id = $1 AND event_type = 'ticket.status_changed'",
+      `SELECT 1 FROM outbox
+        WHERE ticket_id = $1 AND event_type = 'ticket.status_changed' AND payload->>'to' = 'pending'`,
       [ticket.id],
     );
     expect(outbox.rowCount).toBe(1);
