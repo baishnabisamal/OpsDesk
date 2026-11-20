@@ -89,21 +89,30 @@ Open two browser windows side by side (one normal, one private) so two people ca
 
 ### R5. Architecture and cost versus "pay per add-on" or per-call APIs
 
-```mermaid
-flowchart LR
-    Agency["Agency browser"] -->|HTTPS| Caddy
-    Staff["Staff browser"] -->|HTTPS + WebSocket| Caddy
-    Caddy["Caddy: HTTPS, React files"] --> API["API (Node)"]
-    Caddy --> RT["Realtime gateway (Node)"]
-    API --> PG[("PostgreSQL: data, rules, RLS")]
-    API -->|classify| ML["ML service (Python)"]
-    API --> Redis[("Redis: queues, events")]
-    Worker["Worker (Node): SLA scan, routing retry, outbox relay, email"] --> PG
-    Worker --> Redis
-    Redis --> RT
-    Worker -->|SMTP| Mail["Email provider"]
-    Hotel["Hotel email"] -->|signed webhook| API
+```text
+  WHO USES IT     Agency browser      Staff browser       Hotel (email)
+                        |                   |                   |
+                        +---------+---------+                   |
+                                  | HTTPS, WebSocket            | signed webhook
+                                  v                             |
+  FRONT DOOR      [ Caddy: HTTPS + React app ]                  |
+                        |                   |                   |
+                        v                   v                   |
+  NODE (one       [ API ]  <-------------------------------------+
+  codebase,          |              [ Realtime gateway ]
+  3 processes)       |                      ^
+                     |                      | live events
+                  [ Worker: SLA scan, routing retry, outbox relay, email ]
+                     |                      |
+                     v                      |
+  DATA            [ PostgreSQL ]        [ Redis ]          [ ML service ]
+                  data, rules, RLS      queues, events     Python, classify
+                  source of truth                          (called by API)
 ```
+
+- The **API** reads and writes **PostgreSQL**, asks the **ML service** to classify tickets, and puts jobs on **Redis**.
+- The **Worker** reads PostgreSQL, publishes events to **Redis**, and sends email over SMTP.
+- The **Realtime gateway** passes those Redis events to browsers over WebSocket.
 
 One Node codebase runs as three processes; PostgreSQL is the single source of truth. Details in [section 5](#5-architecture) and the [decision records](docs/adr/).
 
